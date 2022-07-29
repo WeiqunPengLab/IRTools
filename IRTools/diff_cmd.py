@@ -237,14 +237,17 @@ class IRI_diff(object):
                                 continue
                         if len(num_intron_IRI_S1) < 2 or len(num_intron_IRI_S2) < 2:
                                 continue
-                        filtered_introns[id] = (intron_IRI_S1, intron_IRI_S2)
                         if self.params["analysistype"] == "P":
-                                pval_list.append(scipy.stats.ttest_rel(num_intron_IRI_S1, num_intron_IRI_S2)[1])
+                                pval = scipy.stats.ttest_rel(num_intron_IRI_S1, num_intron_IRI_S2)[1]
                         else:
-                                pval_list.append(scipy.stats.ttest_ind(num_intron_IRI_S1, num_intron_IRI_S2)[1])
+                                pval = scipy.stats.ttest_ind(num_intron_IRI_S1, num_intron_IRI_S2)[1]
+                        if math.isnan(pval):
+                                continue
+                        filtered_introns[id] = (intron_IRI_S1, intron_IRI_S2)
+                        pval_list.append(pval)
                         diff = mean(num_intron_IRI_S2) - mean(num_intron_IRI_S1)
                         IRI_diff_list.append(diff)
-
+                
                 fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
                 
                 results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRI.introns.txt")
@@ -280,11 +283,14 @@ class IRI_diff(object):
                                 continue
                         if len(num_gene_IRI_S1) < 2 or len(num_gene_IRI_S2) < 2:
                                 continue
-                        filtered_genes[id] = (gene_IRI_S1, gene_IRI_S2)
                         if self.params["analysistype"] == "P":
-                                pval_list.append(scipy.stats.ttest_rel(num_gene_IRI_S1, num_gene_IRI_S2)[1])
+                                pval = scipy.stats.ttest_rel(num_gene_IRI_S1, num_gene_IRI_S2)[1]
                         else:
-                                pval_list.append(scipy.stats.ttest_ind(num_gene_IRI_S1, num_gene_IRI_S2)[1])
+                                pval = scipy.stats.ttest_ind(num_gene_IRI_S1, num_gene_IRI_S2)[1]
+                        if math.isnan(pval):
+                                continue
+                        filtered_genes[id] = (gene_IRI_S1, gene_IRI_S2)
+                        pval_list.append(pval)
                         diff = mean(num_gene_IRI_S2) - mean(num_gene_IRI_S1)
                         IRI_diff_list.append(diff)
 
@@ -561,14 +567,17 @@ class IRC_diff(object):
                                 continue
                         if len(num_intron_IRC_S1) < 2 or len(num_intron_IRC_S2) < 2:
                                 continue
-                        filtered_introns[id] = (intron_IRC_S1, intron_IRC_S2)
                         if self.params["analysistype"] == "P":
-                                pval_list.append(scipy.stats.ttest_rel(num_intron_IRC_S1, num_intron_IRC_S2)[1])
+                                pval = scipy.stats.ttest_rel(num_intron_IRC_S1, num_intron_IRC_S2)[1]
                         else:
-                                pval_list.append(scipy.stats.ttest_ind(num_intron_IRC_S1, num_intron_IRC_S2)[1])
+                                pval = scipy.stats.ttest_ind(num_intron_IRC_S1, num_intron_IRC_S2)[1]
+                        if math.isnan(pval):
+                                continue
+                        filtered_introns[id] = (intron_IRC_S1, intron_IRC_S2)
+                        pval_list.append(pval)
                         diff = mean(num_intron_IRC_S2) - mean(num_intron_IRC_S1)
                         IRC_diff_list.append(diff)
-
+                
                 fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
 
                 results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRC.introns.txt")
@@ -604,11 +613,14 @@ class IRC_diff(object):
                                 continue
                         if len(num_gene_IRC_S1) < 2 or len(num_gene_IRC_S2) < 2:
                                 continue
-                        filtered_genes[id] = (gene_IRC_S1, gene_IRC_S2)
                         if self.params["analysistype"] == "P":
-                                pval_list.append(scipy.stats.ttest_rel(num_gene_IRC_S1, num_gene_IRC_S2)[1])
+                                pval = scipy.stats.ttest_rel(num_gene_IRC_S1, num_gene_IRC_S2)[1]
                         else:
-                                pval_list.append(scipy.stats.ttest_ind(num_gene_IRC_S1, num_gene_IRC_S2)[1])
+                                pval = scipy.stats.ttest_ind(num_gene_IRC_S1, num_gene_IRC_S2)[1]
+                        if math.isnan(pval):
+                                continue
+                        filtered_genes[id] = (gene_IRC_S1, gene_IRC_S2)
+                        pval_list.append(pval)
                         diff = mean(num_gene_IRC_S2) - mean(num_gene_IRC_S1)
                         IRC_diff_list.append(diff)
 
@@ -647,11 +659,14 @@ class IRC_diff(object):
                                 continue
                         if len(num_junction_IRC_S1) < 2 or len(num_junction_IRC_S2) < 2:
                                 continue
-                        filtered_junctions[id] = (junction_IRC_S1, junction_IRC_S2)
                         if self.params["analysistype"] == "P":
-                                pval_list.append(scipy.stats.ttest_rel(num_junction_IRC_S1, num_junction_IRC_S2)[1])
+                                pval = scipy.stats.ttest_rel(num_junction_IRC_S1, num_junction_IRC_S2)[1]
                         else:
-                                pval_list.append(scipy.stats.ttest_ind(num_junction_IRC_S1, num_junction_IRC_S2)[1])
+                                pval = scipy.stats.ttest_ind(num_junction_IRC_S1, num_junction_IRC_S2)[1]
+                        if math.isnan(pval):
+                                continue
+                        filtered_junctions[id] = (junction_IRC_S1, junction_IRC_S2)
+                        pval_list.append(pval)
                         diff = mean(num_junction_IRC_S2) - mean(num_junction_IRC_S1)
                         IRC_diff_list.append(diff)
 
