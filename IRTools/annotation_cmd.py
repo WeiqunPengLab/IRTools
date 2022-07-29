@@ -25,7 +25,7 @@ def find_bad_genes(gtffile):
 def extend_transcript_region(feature, transcript_region):
         gene_id = feature.attr["gene_id"]
         transcript_id = feature.attr["transcript_id"]
-        if gene_id not in transcript_region.keys() or transcript_id not in transcript_region[gene_id].keys():
+        if gene_id not in list(transcript_region.keys()) or transcript_id not in list(transcript_region[gene_id].keys()):
                 transcript_region[gene_id][transcript_id] = feature.iv.copy()
         else:
                 transcript_iv = transcript_region[gene_id][transcript_id]
@@ -37,9 +37,9 @@ def extend_transcript_region(feature, transcript_region):
 # Gene region will cover all transcripts region that belong to this gene.                
 def find_gene_region(transcript_region):
         gene_region = {}
-        for gene_id in transcript_region.keys():
-                for transcript_id in transcript_region[gene_id].keys():
-                        if gene_id not in gene_region.keys():
+        for gene_id in list(transcript_region.keys()):
+                for transcript_id in list(transcript_region[gene_id].keys()):
+                        if gene_id not in list(gene_region.keys()):
                                 gene_region[gene_id] = transcript_region[gene_id][transcript_id].copy()
                         else:
                                 gene_region[gene_id].start = min(gene_region[gene_id].start, transcript_region[gene_id][transcript_id].start)
@@ -49,9 +49,9 @@ def find_gene_region(transcript_region):
 # Gene region length: including all transcripts region length, the overlapping region in different transcripts will only be counted once.
 def find_gene_region_length(gene_region, transcript_region):
         gene_region_length = collections.Counter()
-        for gene_id in transcript_region.keys():
+        for gene_id in list(transcript_region.keys()):
                 transcripts = HTSeq.GenomicArrayOfSets("auto", stranded=True)
-                for transcript_id in transcript_region[gene_id].keys():
+                for transcript_id in list(transcript_region[gene_id].keys()):
                         transcripts[transcript_region[gene_id][transcript_id]] += gene_id
                 for iv, step_set in transcripts[gene_region[gene_id]].steps():
                         if len(step_set) != 0:
@@ -132,11 +132,11 @@ def run(args):
               	                
         
         # Read features from the input GTF file.
-        gtffile = HTSeq.GFF_Reader(args.inputfile, end_included=True)
+        gtffile = HTSeq.GFF_Reader(args.inputfile, end_included=True) # issue is likely somewhere in these two lines
         gtffile = filter(lambda feature: re.search(r'chr[a-zA-Z0-9]+$', feature.iv.chrom), gtffile)
+        gtffile = list(gtffile)
         bad_gene_list = find_bad_genes(gtffile)
         logging.info("Removing genes with exons in different chromosomes or strands (%i discarded)" % len(bad_gene_list))
-        
         gtffile = filter(lambda feature: feature.attr['gene_id'] not in bad_gene_list, gtffile)
         for feature in gtffile:
                 if feature.type == "exon":
@@ -157,8 +157,8 @@ def run(args):
         (CDS_region, five_UTR_region, three_UTR_region) = find_CDS_and_UTR_region(start_codon_region, stop_codon_region, transcript_region)
                  
         introns = collections.defaultdict( lambda: HTSeq.GenomicArrayOfSets("auto", stranded=True) )               
-        for gene_id in transcript_region.keys():
-                for transcript_id in transcript_region[gene_id].keys():
+        for gene_id in list(transcript_region.keys()):
+                for transcript_id in list(transcript_region[gene_id].keys()):
                         transcript_iv = transcript_region[gene_id][transcript_id]
                         for iv, step_set in exons[gene_id][transcript_iv].steps():
                                 if transcript_id not in step_set:
@@ -169,7 +169,8 @@ def run(args):
         # One exon bin is possibly shared by multiple transcripts.                                
         gene_exons_bins = collections.defaultdict( lambda: list() )
 
-        for gene_id in gene_region.keys():
+        for gene_id in list(gene_region.keys()):
+                gene_iv = gene_region[gene_id]
                 gene_iv = gene_region[gene_id]
                 for iv, step_set in exons[gene_id][gene_iv].steps():
                         transcript_list = list(step_set)
@@ -184,8 +185,8 @@ def run(args):
                         gene_exons_bins[gene_id] = gene_exons_bins[gene_id][::-1]
         
         # Number the exon bins with attrubute "exonic_region_number" starting from "001".                           
-        for exons_bins_list in gene_exons_bins.values():
-                for i in xrange(len(exons_bins_list)):
+        for exons_bins_list in list(gene_exons_bins.values()):
+                for i in range(len(exons_bins_list)):
                         exons_bins_list[i].attr["exonic_region_number"] = "%03d" % ( i+1 )
         
         # gene_introns_bins redefines the introns in one gene. All introns in the gene region are split into intron bins. 
@@ -194,7 +195,7 @@ def run(args):
         # either overlaps with the exonic region of that transcript or lies outside of the whole region of that transcript.
         gene_introns_bins = collections.defaultdict( lambda: list() )
         
-        for gene_id in gene_region.keys():
+        for gene_id in list(gene_region.keys()):
                 gene_iv = gene_region[gene_id]
                 for iv, step_set in introns[gene_id][gene_iv].steps():
                         transcript_list = list(step_set)
@@ -209,8 +210,8 @@ def run(args):
                         gene_introns_bins[gene_id] = gene_introns_bins[gene_id][::-1]
         
         # Number the intron bins with attrubute "intronic_region_number" starting from "001".        
-        for introns_bins_list in gene_introns_bins.values():
-                for i in xrange(len(introns_bins_list)):
+        for introns_bins_list in list(gene_introns_bins.values()):
+                for i in range(len(introns_bins_list)):
                         introns_bins_list[i].attr["intronic_region_number"] = "%03d" % ( i+1 )                          
         
         
@@ -224,7 +225,7 @@ def run(args):
         gene_constitutive_exons_length = collections.Counter()
         gene_constitutive_exons_number = collections.Counter()
         
-        for gene_id in gene_region.keys():
+        for gene_id in list(gene_region.keys()):
                 transcripts_in_gene = len(transcript_region[gene_id])
                 gene_iv = gene_region[gene_id]
                 for iv, step_set in exons[gene_id][gene_iv].steps():
@@ -242,8 +243,8 @@ def run(args):
                 if gene_iv.strand == "-":
                         gene_constitutive_exons_bins[gene_id] = gene_constitutive_exons_bins[gene_id][::-1]
                                 
-        for constitutive_exons_bins_list in gene_constitutive_exons_bins.values():
-                for i in xrange(len(constitutive_exons_bins_list)):
+        for constitutive_exons_bins_list in list(gene_constitutive_exons_bins.values()):
+                for i in range(len(constitutive_exons_bins_list)):
                         constitutive_exons_bins_list[i].attr["constitutive_exonic_region_number"] = "%03d" % ( i+1 )
         
         
@@ -260,15 +261,15 @@ def run(args):
         gene_constitutive_introns_length = collections.Counter()
         gene_constitutive_introns_number = collections.Counter()
         
-        for gene_id in gene_region.keys():
+        for gene_id in list(gene_region.keys()):
                 transcripts_in_gene = len(transcript_region[gene_id])
                 gene_iv = gene_region[gene_id]
                 exist_UTR_regions = False
-                if transcripts_in_gene == 1 and gene_id in start_codon_region.keys():
+                if transcripts_in_gene == 1 and gene_id in list(start_codon_region.keys()):
                         assert len(start_codon_region[gene_id]) == len(stop_codon_region[gene_id]) == 1
-                        transcript_id = start_codon_region[gene_id].keys()[0]
-                        start_codon_region_iv = start_codon_region[gene_id].values()[0]
-                        stop_codon_region_iv = stop_codon_region[gene_id].values()[0]
+                        transcript_id = list(start_codon_region[gene_id].keys())[0]
+                        start_codon_region_iv = list(start_codon_region[gene_id].values())[0]
+                        stop_codon_region_iv = list(stop_codon_region[gene_id].values())[0]
                         (five_UTR_region_iv, three_UTR_region_iv) = find_UTR_region_iv(start_codon_region_iv, stop_codon_region_iv, transcript_region[gene_id][transcript_id])
                         exist_UTR_regions = True
                 for iv, step_set in introns[gene_id][gene_iv].steps():
@@ -294,13 +295,13 @@ def run(args):
         five_UTR_constitutive_introns = collections.defaultdict( lambda: list() )
         three_UTR_constitutive_introns = collections.defaultdict( lambda: list() )
         
-        for constitutive_introns_bins_list in gene_constitutive_introns_bins.values():
-                for i in xrange(len(constitutive_introns_bins_list)):
+        for constitutive_introns_bins_list in list(gene_constitutive_introns_bins.values()):
+                for i in range(len(constitutive_introns_bins_list)):
                         gene_id = constitutive_introns_bins_list[i].attr["gene_id"]
                         constitutive_intronic_region_number = constitutive_introns_bins_list[i].attr["constitutive_intronic_region_number"] = "%03d" % ( i+1 )    
-                        if "five_UTR_constitutive_intron" in constitutive_introns_bins_list[i].attr.keys():
+                        if "five_UTR_constitutive_intron" in list(constitutive_introns_bins_list[i].attr.keys()):
                                 five_UTR_constitutive_introns[gene_id].append(constitutive_intronic_region_number)
-                        elif "three_UTR_constitutive_intron"in constitutive_introns_bins_list[i].attr.keys():
+                        elif "three_UTR_constitutive_intron" in list(constitutive_introns_bins_list[i].attr.keys()):
                                 three_UTR_constitutive_introns[gene_id].append(constitutive_intronic_region_number)
                                 
                                                         
@@ -313,8 +314,8 @@ def run(args):
         logging.info("Generating constitutive junctions (CJ) annotation")
         
         gene_constitutive_junction = collections.defaultdict( lambda: list() )
-        for gene_id in gene_constitutive_exons_start_d.keys():
-                if gene_id in gene_constitutive_introns_start_d.keys():
+        for gene_id in list(gene_constitutive_exons_start_d.keys()):
+                if gene_id in list(gene_constitutive_introns_start_d.keys()):
                         gene_constitutive_junction_from_exon_to_intron_set = gene_constitutive_exons_end_d[gene_id] & gene_constitutive_introns_start_d[gene_id]
                         for gene_constitutive_junction_pos in gene_constitutive_junction_from_exon_to_intron_set:
                                 feature = HTSeq.GenomicFeature(gene_id, "constitutive_junction", gene_constitutive_junction_pos)
@@ -350,8 +351,8 @@ def run(args):
                         else:
                                 gene_constitutive_junction[gene_id].sort(key = lambda f: ( f[0].iv.chrom, -f[0].iv.start ))
         
-        for gene_constitutive_junction_list in gene_constitutive_junction.values():
-                for i in xrange(len(gene_constitutive_junction_list)):
+        for gene_constitutive_junction_list in list(gene_constitutive_junction.values()):
+                for i in range(len(gene_constitutive_junction_list)):
                         gene_constitutive_junction_list[i][0].attr["constitutive_junction_number"] = "%03d" % ( i+1 ) 
                         
                         feature = gene_constitutive_junction_list[i][0]
@@ -371,7 +372,7 @@ def run(args):
         # For single transcript gene, if any of constitutive intron bins in 5' UTR, it will have attribute "five_UTR_constitutive_introns" 
         # (value would be like "001,002", list the region numbers); similarly for 3' UTR.
         gene_region_features = []
-        for gene_id in gene_region.keys():
+        for gene_id in list(gene_region.keys()):
                 iv = gene_region[gene_id]
                 feature = HTSeq.GenomicFeature(gene_id, "gene_region", iv)
                 feature.source = "IR_annotation"
@@ -383,9 +384,9 @@ def run(args):
                 feature.attr["constitutive_intronic_region_length"] = gene_constitutive_introns_length[gene_id]
                 feature.attr["constitutive_exonic_region_number"] = gene_constitutive_exons_number[gene_id]
                 feature.attr["constitutive_intronic_region_number"] = gene_constitutive_introns_number[gene_id]
-                if gene_id in five_UTR_constitutive_introns.keys():
+                if gene_id in list(five_UTR_constitutive_introns.keys()):
                         feature.attr["five_UTR_constitutive_introns"] = ",".join(five_UTR_constitutive_introns[gene_id])
-                if gene_id in three_UTR_constitutive_introns.keys():
+                if gene_id in list(three_UTR_constitutive_introns.keys()):
                         feature.attr["three_UTR_constitutive_introns"] = ",".join(three_UTR_constitutive_introns[gene_id])
                 gene_region_features.append(feature)
                 
@@ -394,8 +395,8 @@ def run(args):
         # transcript_region_features defines a feature for each transcript. feature iv is the transcript region.
         # Feature type is "transcript_region". Each feature has attributes: "gene_id", "transcript_id".
         transcript_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in transcript_region.keys():
-                for transcript_id in transcript_region[gene_id].keys():
+        for gene_id in list(transcript_region.keys()):
+                for transcript_id in list(transcript_region[gene_id].keys()):
                         iv = transcript_region[gene_id][transcript_id]
                         feature = HTSeq.GenomicFeature(gene_id, "transcript_region", iv)
                         feature.source = "IR_annotation"
@@ -405,8 +406,8 @@ def run(args):
                         transcript_region_features[gene_id].append(feature)
                         
         CDS_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in CDS_region.keys():
-                for transcript_id in CDS_region[gene_id].keys():
+        for gene_id in list(CDS_region.keys()):
+                for transcript_id in list(CDS_region[gene_id].keys()):
                         iv = CDS_region[gene_id][transcript_id]
                         feature = HTSeq.GenomicFeature(gene_id, "CDS_region", iv)
                         feature.source = "IR_annotation"
@@ -416,8 +417,8 @@ def run(args):
                         CDS_region_features[gene_id].append(feature)    
                         
         five_UTR_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in five_UTR_region.keys():
-                for transcript_id in five_UTR_region[gene_id].keys():
+        for gene_id in list(five_UTR_region.keys()):
+                for transcript_id in list(five_UTR_region[gene_id].keys()):
                         iv = five_UTR_region[gene_id][transcript_id]
                         feature = HTSeq.GenomicFeature(gene_id, "five_UTR_region", iv)
                         feature.source = "IR_annotation"
@@ -427,8 +428,8 @@ def run(args):
                         five_UTR_region_features[gene_id].append(feature)   
                         
         three_UTR_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in three_UTR_region.keys():
-                for transcript_id in three_UTR_region[gene_id].keys():
+        for gene_id in list(three_UTR_region.keys()):
+                for transcript_id in list(three_UTR_region[gene_id].keys()):
                         iv = three_UTR_region[gene_id][transcript_id]
                         feature = HTSeq.GenomicFeature(gene_id, "three_UTR_region", iv)
                         feature.source = "IR_annotation"
@@ -482,4 +483,3 @@ def run(args):
         
                                         
         
-                

@@ -1,1 +1,1 @@
-IRTools_VERSION = "1.1.4.8"
+IRTools_VERSION = "1.2.0.0"

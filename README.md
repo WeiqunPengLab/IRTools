@@ -3,7 +3,7 @@ IRTools is a computational toolset for detection and analysis of intron retentio
 
 ## Installation
 
-To use `IRTools`, you will need `python 2.7`.
+To use `IRTools`, you will need `python 3.6.9`.
 
 #### PIP
 
@@ -20,8 +20,8 @@ pip install numpy
 pip install scipy
 pip install pandas
 pip install networkx
-pip install HTSeq==0.6.1
-pip install pysam==0.7.6
+pip install HTSeq==0.13.5
+pip install pysam==0.19.1
 ```
 
 
@@ -90,11 +90,11 @@ chr1	IR_annotation	constitutive_junction	        3660632	 3660632	 . 	    -	  .	
 
 **-q/--quant-type {IRI,IRC}**
 
-IR quantifiation types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: "IRI".
+IR quantification types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: "IRI".
 
 **-i/--alt-file ALTFILE**
 
-Input RNA-Seq alignment file. If IR quantifiation type is "IRI", the input file can be BAM or BED file. If IR quantification type is "IRC", the input file can only be BAM file.
+Input RNA-Seq alignment file. If IR quantification type is "IRI", the input file can be BAM or BED file. If IR quantification type is "IRC", the input file can only be BAM file.
 
 **-p/--read-type {paired,single}**
 
@@ -108,14 +108,14 @@ Library type. DEFAULT: "fr-unstranded" (unstranded). Use "fr-firststrand" or "fr
 
 Mappability score bigWig file (depends on species,
                         sequence length of RNA-Seq library, etc.). Or specify a
-                        species (i.e. hg19 or mm9) for which a default
+                        species (i.e. hg19, mm9, or mm10) for which a default
                         annotation file (default for 50 bps of single end RNA-
                         Seq library) can be downloaded and used. If specified,
                         mappability will take into account.
                         
-Note: to take into account mappability, download [RSeQC 2.6.2](IRTools/utility/RSeQC-2.6.2), and install: `python setup install`
+Note: to take into account mappability, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
                         
-**-e/--species {hg19,mm9}** (exclusive with -g)
+**-e/--species {hg19,mm9,mm10}** (exclusive with -g)
 
 Specify a species for which integrated IR annotation
                         GTF file can be used.                    
@@ -220,7 +220,7 @@ Arguments that are same as `IRTools quant`:
 
 **-u/--map-file MAPFILE** (optional)
 
-**-e/--species {hg19,mm9}** (exclusive with -g)
+**-e/--species {hg19,mm9,mm10}** (exclusive with -g)
 
 **-g/--annotation-file ANNOFILE** (exclusive with -e)
 

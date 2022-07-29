@@ -1,0 +1,35 @@
+Installation guide for RSeQC
+==============================
+
+
+Step-1: Install pip
+------------------------
+pip is already installed if you are using Python 2 >=2.7.9 or Python 3 >=3.4 downloaded
+from python.org or if you are working in a Virtual Environment created by virtualenv
+or pyvenv. Just make sure to upgrade pip. You must first install pip following the
+instructions: https://pypi.python.org/pypi/pip
+
+
+Step-2a: (if you are using python2.7.*): 
+--------------------------------------
+pip2  install RSeQC==2.6.5
+
+
+Step-2b: (if you are using python3): 
+--------------------------------------
+pip3  install RSeQC==3.0.0
+
+
+Install RSeQC from source code
+--------------------------------------
+Online Manual http://rseqc.sourceforge.net/
+
+
+NOTE:
+    * To install RSeQC on MAC OSX, user need to download and install Xcode beforehand.
+    * To produce graphical outputs, R must be installed.
+    * If the installation failed with error like: /usr/bin/ld: cannot find -lz, you may need to install a shared zlib library on your system. 
+
+
+
+

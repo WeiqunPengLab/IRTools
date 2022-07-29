@@ -1,7 +1,7 @@
 import os
 import logging
 import re
-import urllib
+import urllib.request, urllib.parse, urllib.error
 import collections
 import itertools
 import networkx as nx
@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import bisect
 import HTSeq
+import warnings
+from functools import reduce
 
 class IRI_quant(object):       
         def __init__(self, args):
@@ -57,7 +59,7 @@ class IRI_quant(object):
         @staticmethod        
         def valid_annofile(annofile):
                 gtffile = HTSeq.GFF_Reader(annofile, end_included=True)
-                feature_types = set(map(lambda feat: feat.type, itertools.islice(gtffile, 1000)))
+                feature_types = set([feat.type for feat in itertools.islice(gtffile, 1000)])
                 for feat in ['gene_region', 'constitutive_exonic_region', 'constitutive_intronic_region', 'constitutive_junction']:
                         if feat not in feature_types:
                                 raise Exception("Annotations for \"{}\" are missed in {}. Please generate valid annotation GTF file by \"IRTools annotation\" command.".format(feat, annofile))
@@ -87,7 +89,7 @@ class IRI_quant(object):
         @staticmethod
         def download_mappability_file_by_species_name(species):
                 url = 'http://hgdownload.cse.ucsc.edu/goldenPath/{}/encodeDCC/wgEncodeMapability/wgEncodeCrgMapabilityAlign50mer.bigWig'.format(species)
-                response = urllib.urlopen(url)
+                response = urllib.request.urlopen(url)
                 chunk_size = 10 * 1024 * 1024
                 fname = species + '_' + url.split('/')[-1]
                 with open(fname, 'wb') as f:
@@ -106,10 +108,10 @@ class IRI_quant(object):
                         from bx.bbi.bigwig_file import BigWigFile
 
                         if re.search('bigWig$', mapfile):
-                                mapfile_data = BigWigFile(open(mapfile))
+                                mapfile_data = BigWigFile(open(mapfile, "rb")) # [edit] added binary option
                         elif mapfile == "hg19" or mapfile == "mm9":
                                 downloaded_mapfile = self.download_mappability_file_by_species_name(mapfile)
-                                mapfile_data = BigWigFile(open(downloaded_mapfile))
+                                mapfile_data = BigWigFile(open(downloaded_mapfile, "rb")) # [edit] added binary option
                         else:
                                 raise Exception("\"{}\" is neither a bigWig file nor a supported species name (hg19 or mm9).".format(mapfile))
                                                         
@@ -119,7 +121,7 @@ class IRI_quant(object):
         
                                 elif feature.type == "constitutive_intronic_region":
                                         CIR_iv = feature.iv
-                                        for start, end, score in mapfile_data.get(CIR_iv.chrom, CIR_iv.start, CIR_iv.end):
+                                        for start, end, score in mapfile_data.get(CIR_iv.chrom.encode('utf-8'), CIR_iv.start, CIR_iv.end): # [edit] made chrom binary
                                                 score = 0 if score < map_score_cutoff else 1
                                                 iv = HTSeq.GenomicInterval(CIR_iv.chrom, start, end, CIR_iv.strand)
                                                 gene_map_score[iv] = score                                         
@@ -182,7 +184,7 @@ class IRI_quant(object):
         def binnize(iv, effective_length, gene_map_score, num_bins):
                 bin_iv_list = []
                 iv_chrom, iv_strand = iv.chrom, iv.strand
-                bin_length = effective_length / num_bins
+                bin_length = effective_length // num_bins
                 for i in range(num_bins):
                         if i == 0:
                                 bin_start = iv.start
@@ -477,9 +479,15 @@ class IRI_quant(object):
                                         adjacent_CER_read_count += self.counts[gene_id]["constitutive_exonic_region"][adjacent_CER_number]
                                         adjacent_CER_length += self.CER_length[gene_id][adjacent_CER_number]
                                 adjacent_CER_RPKM = adjacent_CER_read_count / (adjacent_CER_length / 1000.0) / (self.total_read_count / 1000000.0)
-                                
+                                # Note: numerical warning likely to be gererated here, but does not cause issues with results
+                                # RuntimeWarning: invalid value encountered in true_divide
+                                # RuntimeWarning: divide by zero encountered in true_divide
+                                # "N/A" if there are no intron or exon reads (CIR_RPKM == adjacent_CER_RPKM == 0)
+                                # "inf" if there are intron reads but no exon reads (CIR_RPKM==0 and adjacent_CER_RPKM > 0)
+                                warnings.filterwarnings('ignore') # Ignores above warning
                                 intron_IRI = np.divide(CIR_RPKM, adjacent_CER_RPKM)
-                                        
+                                warnings.resetwarnings()
+
                                 IRI_intron_level_dict = {"CIR_id": CIR_id,
                                                          "CIR_iv": self.CIR_id2iv[CIR_id],
                                                          "CIR_length": CIR_effective_length,
@@ -538,8 +546,15 @@ class IRI_quant(object):
                         gene_CIR_RPKM = gene_CIR_read_count / (gene_CIR_effective_length / 1000.0) / (self.total_read_count / 1000000.0)
                         gene_CER_RPKM = gene_CER_read_count / (gene_CER_length / 1000.0) / (self.total_read_count / 1000000.0)
                         
+                        # Note: numerical warning likely to be gererated here, but does not cause issues with results
+                        # RuntimeWarning: invalid value encountered in true_divide
+                        # RuntimeWarning: divide by zero encountered in true_divide
+                        # "N/A" if there are no intron or exon reads (gene_CIR_RPKM == gene_CER_RPKM == 0)
+                        # "inf" if there are intron reads but no exon reads (gene_CIR_RPKM==0 and gene_CER_RPKM > 0)
+                        warnings.filterwarnings('ignore') # Ignores above warning
                         gene_IRI = np.divide(gene_CIR_RPKM, gene_CER_RPKM)
-                        
+                        warnings.resetwarnings()
+
                         IRI_gene_level_dict = {"gene_id": gene_id,
                                                "gene_iv": self.gene_id2iv[gene_id],
                                                "gene_CIR_length": gene_CIR_effective_length,
@@ -560,19 +575,19 @@ class IRI_quant(object):
                 self.IRI_gene_level_df.to_csv(outfile_fullpath, index=None, sep='\t', na_rep="NA")  
                 
         def output_IRI_genome_wide(self):
-                total_CIR_effective_length = reduce(lambda x,y: x + sum(y.values()), self.CIR_effective_length.values(), 0) 
-                total_CER_length = reduce(lambda x,y: x + sum(y.values()), self.CER_length.values(), 0) 
+                total_CIR_effective_length = reduce(lambda x,y: x + sum(y.values()), list(self.CIR_effective_length.values()), 0) 
+                total_CER_length = reduce(lambda x,y: x + sum(y.values()), list(self.CER_length.values()), 0) 
                 
-                total_CIR_read_count = reduce(lambda x,y: x + sum(y["constitutive_intronic_region"].values()), self.counts.values(), 0) 
-                total_CER_read_count = reduce(lambda x,y: x + sum(y["constitutive_exonic_region"].values()), self.counts.values(), 0)     
+                total_CIR_read_count = reduce(lambda x,y: x + sum(y["constitutive_intronic_region"].values()), list(self.counts.values()), 0) 
+                total_CER_read_count = reduce(lambda x,y: x + sum(y["constitutive_exonic_region"].values()), list(self.counts.values()), 0)     
                 
                 IRI_genome_wide = (total_CIR_read_count * 1.0 / total_CIR_effective_length) / (total_CER_read_count * 1.0 / total_CER_length)
                 
                 logging.info("Genome-wide intron retention statistics of the library:")
-                print("\tTotal CER read count: %f (%.2f%%)" % (total_CER_read_count, total_CER_read_count * 100.0 / self.total_read_count))
-                print("\tTotal CIR read count: %f (%.2f%%)" % (total_CIR_read_count, total_CIR_read_count * 100.0 / self.total_read_count))
-                print("\tTotal read count: %i" % self.total_read_count)
-                print("\tGenomoe-wide intron retention index: %f" % IRI_genome_wide)                
+                print(("\tTotal CER read count: %f (%.2f%%)" % (total_CER_read_count, total_CER_read_count * 100.0 / self.total_read_count)))
+                print(("\tTotal CIR read count: %f (%.2f%%)" % (total_CIR_read_count, total_CIR_read_count * 100.0 / self.total_read_count)))
+                print(("\tTotal read count: %i" % self.total_read_count))
+                print(("\tGenome-wide intron retention index: %f" % IRI_genome_wide))                
                 
                 
              

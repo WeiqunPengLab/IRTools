@@ -9,6 +9,10 @@ import collections
 import copy
 import networkx as nx
 import HTSeq
+import math
+import scipy.stats
+import statsmodels.stats.multitest
+from statistics import mean
 from IRTools.quant_IRI import IRI_quant
 from IRTools.quant_IRC import IRC_quant
 
@@ -124,133 +128,176 @@ class IRI_diff(object):
                 
                 self.logger.disabled = False
         
-        @staticmethod        
-        def filter_invalid_rows(df):
-                df['sum_IC_S1'] = df.apply(lambda row: sum([float(x) for x in row['IC_S1'].split(',')]), axis=1)
-                df['sum_SC_S1'] = df.apply(lambda row: sum([float(x) for x in row['SC_S1'].split(',')]), axis=1)
-                
-                df['sum_IC_S2'] = df.apply(lambda row: sum([float(x) for x in row['IC_S2'].split(',')]), axis=1)
-                df['sum_SC_S2'] = df.apply(lambda row: sum([float(x) for x in row['SC_S2'].split(',')]), axis=1)   
-                
-                df = df[(df['sum_IC_S1'] + df['sum_SC_S1'] > 0) & (df['sum_IC_S2'] + df['sum_SC_S2'] > 0) & ((df['sum_IC_S1']  != 0) | (df['sum_IC_S2'] != 0)) & ((df['sum_SC_S1']  != 0) | (df['sum_SC_S2'] != 0)) & (df['IncFormLen'] != 0) & (df['SkipFormLen'] != 0)]
-                return df.drop(labels=['sum_IC_S1', 'sum_SC_S1', 'sum_IC_S2', 'sum_SC_S2'], axis=1)
-                
-        def generate_rmats_input_intron_level(self):
-                logging.info("Generate inputs for rMATS for differential IR in intron level")
-                
-                rmats_input_intron_level_df = None
-                
-                for i, IRI_intron_level_df in enumerate(self.IRI_intron_level_data['s1_data']):
-                        if rmats_input_intron_level_df is None:
-                                rmats_input_intron_level_df = IRI_intron_level_df[((IRI_intron_level_df.intron_IRI >= 0) & (IRI_intron_level_df.intron_IRI <= 1)) | ((IRI_intron_level_df.adjacent_CER_read_count == 0) & (IRI_intron_level_df.CIR_read_count == 0))].loc[:,['CIR_id', 'CIR_length', 'adjacent_CER_length', 'CIR_read_count', 'adjacent_CER_read_count']]
-                                rmats_input_intron_level_df['IncFormLen'] = rmats_input_intron_level_df['CIR_length'] + rmats_input_intron_level_df['adjacent_CER_length']
-                                rmats_input_intron_level_df['SkipFormLen'] = rmats_input_intron_level_df['adjacent_CER_length']
-                                rmats_input_intron_level_df['IC_S1_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_read_count'] * rmats_input_intron_level_df['IncFormLen'] / (rmats_input_intron_level_df['IncFormLen'] - rmats_input_intron_level_df['SkipFormLen']) 
-                                rmats_input_intron_level_df['SC_S1_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_read_count'] + rmats_input_intron_level_df['adjacent_CER_read_count'] - rmats_input_intron_level_df['IC_S1_R%d' % (i+1)]
-                                rmats_input_intron_level_df.drop(labels=['CIR_length', 'adjacent_CER_length', 'CIR_read_count', 'adjacent_CER_read_count'], axis=1, inplace=True)
-                                
-                        else:
-                                rmats_input_intron_level_df = rmats_input_intron_level_df.merge(IRI_intron_level_df[((IRI_intron_level_df.intron_IRI >= 0) & (IRI_intron_level_df.intron_IRI <= 1)) | ((IRI_intron_level_df.adjacent_CER_read_count == 0) & (IRI_intron_level_df.CIR_read_count == 0))].loc[:,['CIR_id', 'CIR_read_count', 'adjacent_CER_read_count']], on='CIR_id')
-                                rmats_input_intron_level_df['IC_S1_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_read_count'] * rmats_input_intron_level_df['IncFormLen'] / (rmats_input_intron_level_df['IncFormLen'] - rmats_input_intron_level_df['SkipFormLen']) 
-                                rmats_input_intron_level_df['SC_S1_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_read_count'] + rmats_input_intron_level_df['adjacent_CER_read_count'] - rmats_input_intron_level_df['IC_S1_R%d' % (i+1)]
-                                rmats_input_intron_level_df.drop(labels=['CIR_read_count', 'adjacent_CER_read_count'], axis=1, inplace=True)
-                                
-                for i, IRI_intron_level_df in enumerate(self.IRI_intron_level_data['s2_data']):
-                        rmats_input_intron_level_df = rmats_input_intron_level_df.merge(IRI_intron_level_df[((IRI_intron_level_df.intron_IRI >= 0) & (IRI_intron_level_df.intron_IRI <= 1)) | ((IRI_intron_level_df.adjacent_CER_read_count == 0) & (IRI_intron_level_df.CIR_read_count == 0))].loc[:,['CIR_id', 'CIR_read_count', 'adjacent_CER_read_count']], on='CIR_id')
-                        rmats_input_intron_level_df['IC_S2_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_read_count'] * rmats_input_intron_level_df['IncFormLen'] / (rmats_input_intron_level_df['IncFormLen'] - rmats_input_intron_level_df['SkipFormLen']) 
-                        rmats_input_intron_level_df['SC_S2_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_read_count'] + rmats_input_intron_level_df['adjacent_CER_read_count'] - rmats_input_intron_level_df['IC_S2_R%d' % (i+1)]
-                        rmats_input_intron_level_df.drop(labels=['CIR_read_count', 'adjacent_CER_read_count'], axis=1, inplace=True)
-                        
-                rmats_input_intron_level_df['IC_S1'] = rmats_input_intron_level_df.filter(regex=r'IC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df['SC_S1'] = rmats_input_intron_level_df.filter(regex=r'SC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df['IC_S2'] = rmats_input_intron_level_df.filter(regex=r'IC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df['SC_S2'] = rmats_input_intron_level_df.filter(regex=r'SC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df = rmats_input_intron_level_df.loc[:,['CIR_id', 'IC_S1', 'SC_S1', 'IC_S2', 'SC_S2', 'IncFormLen', 'SkipFormLen']] 
-                
-                rmats_input_intron_level_df = self.filter_invalid_rows(rmats_input_intron_level_df)
-                
-                rmats_input_intron_level_file = self.params['name'] + ".diff.rMATSinput.IRI.introns.txt" 
-                self.rmats_input_intron_level_file_fullpath = os.path.join(self.temp_dir, rmats_input_intron_level_file)
-                logging.info("Writing intron level rMATS inputs to file: {}".format(self.rmats_input_intron_level_file_fullpath))
-                rmats_input_intron_level_df.to_csv(self.rmats_input_intron_level_file_fullpath, index=None, sep='\t', na_rep="NA") 
-                        
-        def generate_rmats_input_gene_level(self):
-                logging.info("Generate inputs for rMATS for differential IR in gene level")
-                
-                rmats_input_gene_level_df = None
-                
-                for i, IRI_gene_level_df in enumerate(self.IRI_gene_level_data['s1_data']):
-                        if rmats_input_gene_level_df is None:
-                                rmats_input_gene_level_df = IRI_gene_level_df[((IRI_gene_level_df.gene_IRI >= 0) & (IRI_gene_level_df.gene_IRI <= 1)) | ((IRI_gene_level_df.gene_CER_read_count == 0) & (IRI_gene_level_df.gene_CIR_read_count == 0))].loc[:,['gene_id', 'gene_CIR_length', 'gene_CER_length', 'gene_CIR_read_count', 'gene_CER_read_count']]
-                                rmats_input_gene_level_df['IncFormLen'] = rmats_input_gene_level_df['gene_CIR_length'] + rmats_input_gene_level_df['gene_CER_length']
-                                rmats_input_gene_level_df['SkipFormLen'] = rmats_input_gene_level_df['gene_CER_length']
-                                rmats_input_gene_level_df['IC_S1_R%d' % (i+1)] = rmats_input_gene_level_df['gene_CIR_read_count'] * rmats_input_gene_level_df['IncFormLen'] / (rmats_input_gene_level_df['IncFormLen'] - rmats_input_gene_level_df['SkipFormLen']) 
-                                rmats_input_gene_level_df['SC_S1_R%d' % (i+1)] = rmats_input_gene_level_df['gene_CIR_read_count'] + rmats_input_gene_level_df['gene_CER_read_count'] - rmats_input_gene_level_df['IC_S1_R%d' % (i+1)]
-                                rmats_input_gene_level_df.drop(labels=['gene_CIR_length', 'gene_CER_length', 'gene_CIR_read_count', 'gene_CER_read_count'], axis=1, inplace=True)
-                                
-                        else:
-                                rmats_input_gene_level_df = rmats_input_gene_level_df.merge(IRI_gene_level_df[((IRI_gene_level_df.gene_IRI >= 0) & (IRI_gene_level_df.gene_IRI <= 1)) | ((IRI_gene_level_df.gene_CER_read_count == 0) & (IRI_gene_level_df.gene_CIR_read_count == 0))].loc[:,['gene_id', 'gene_CIR_read_count', 'gene_CER_read_count']], on='gene_id')
-                                rmats_input_gene_level_df['IC_S1_R%d' % (i+1)] = rmats_input_gene_level_df['gene_CIR_read_count'] * rmats_input_gene_level_df['IncFormLen'] / (rmats_input_gene_level_df['IncFormLen'] - rmats_input_gene_level_df['SkipFormLen']) 
-                                rmats_input_gene_level_df['SC_S1_R%d' % (i+1)] = rmats_input_gene_level_df['gene_CIR_read_count'] + rmats_input_gene_level_df['gene_CER_read_count'] - rmats_input_gene_level_df['IC_S1_R%d' % (i+1)]
-                                rmats_input_gene_level_df.drop(labels=['gene_CIR_read_count', 'gene_CER_read_count'], axis=1, inplace=True)   
-                                
-                for i, IRI_gene_level_df in enumerate(self.IRI_gene_level_data['s2_data']):
-                        rmats_input_gene_level_df = rmats_input_gene_level_df.merge(IRI_gene_level_df[((IRI_gene_level_df.gene_IRI >= 0) & (IRI_gene_level_df.gene_IRI <= 1)) | ((IRI_gene_level_df.gene_CER_read_count == 0) & (IRI_gene_level_df.gene_CIR_read_count == 0))].loc[:,['gene_id', 'gene_CIR_read_count', 'gene_CER_read_count']], on='gene_id')
-                        rmats_input_gene_level_df['IC_S2_R%d' % (i+1)] = rmats_input_gene_level_df['gene_CIR_read_count'] * rmats_input_gene_level_df['IncFormLen'] / (rmats_input_gene_level_df['IncFormLen'] - rmats_input_gene_level_df['SkipFormLen']) 
-                        rmats_input_gene_level_df['SC_S2_R%d' % (i+1)] = rmats_input_gene_level_df['gene_CIR_read_count'] + rmats_input_gene_level_df['gene_CER_read_count'] - rmats_input_gene_level_df['IC_S2_R%d' % (i+1)]
-                        rmats_input_gene_level_df.drop(labels=['gene_CIR_read_count', 'gene_CER_read_count'], axis=1, inplace=True)   
-                        
-                rmats_input_gene_level_df['IC_S1'] = rmats_input_gene_level_df.filter(regex=r'IC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df['SC_S1'] = rmats_input_gene_level_df.filter(regex=r'SC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df['IC_S2'] = rmats_input_gene_level_df.filter(regex=r'IC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df['SC_S2'] = rmats_input_gene_level_df.filter(regex=r'SC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df = rmats_input_gene_level_df.loc[:,['gene_id', 'IC_S1', 'SC_S1', 'IC_S2', 'SC_S2', 'IncFormLen', 'SkipFormLen']]  
-                
-                rmats_input_gene_level_df = self.filter_invalid_rows(rmats_input_gene_level_df)
-                
-                rmats_input_gene_level_file = self.params['name'] + ".diff.rMATSinput.IRI.genes.txt" 
-                self.rmats_input_gene_level_file_fullpath = os.path.join(self.temp_dir, rmats_input_gene_level_file)
-                logging.info("Writing gene level rMATS inputs to file: {}".format(self.rmats_input_gene_level_file_fullpath))
-                rmats_input_gene_level_df.to_csv(self.rmats_input_gene_level_file_fullpath, index=None, sep='\t', na_rep="NA") 
-                
-        def run_rmats_intron_level(self):
-                rmats_script_dir = pkg_resources.resource_filename('IRTools', "utility/rMATS")
-                rmats_script_fullpath = os.path.join(rmats_script_dir, 'rMATS.sh')
-                rmats_intron_level_output_temp_dir = os.path.join(self.temp_dir, 'rMATS_intron_level_output')
-                
-                logging.info('Run rMATS for differential IR in intron level')
-                rmats_cmd = rmats_script_fullpath + " -d " + self.rmats_input_intron_level_file_fullpath + " -o " + rmats_intron_level_output_temp_dir + " -c " + str(self.params['cutoff']) + " -p 4 -t " + self.params['analysistype']
-                p = subprocess.Popen(rmats_cmd, shell=True)
-                p.wait()
-                
-                rmats_result_intron_level_df = pd.read_csv(os.path.join(rmats_intron_level_output_temp_dir, 'rMATS_Result.txt'), header=0, sep='\t').loc[:, ['CIR_id', 'PValue', 'FDR', 'IncLevel1', 'IncLevel2', 'IncLevelDifference']]
-                rmats_result_intron_level_df['IncLevelDifference'] = - rmats_result_intron_level_df['IncLevelDifference']
-                rmats_result_intron_level_df.rename(columns={'IncLevel1': 'intron_IRI_S1', 'IncLevel2': 'intron_IRI_S2', 'IncLevelDifference': 'intron_IRI_difference'}, inplace=True)
-                
-                outfile = self.params['name'] + '.diff.IRI.introns.txt'
-                outfile_fullpath = os.path.join(self.params['outdir'], outfile)
-                logging.info("Writing intron level differential IR result to file: %s" % outfile_fullpath)
-                rmats_result_intron_level_df.to_csv(outfile_fullpath, index=None, sep='\t')    
-                
-        def run_rmats_gene_level(self):
-                rmats_script_dir = pkg_resources.resource_filename('IRTools', "utility/rMATS")
-                rmats_script_fullpath = os.path.join(rmats_script_dir, 'rMATS.sh')
-                rmats_gene_level_output_temp_dir = os.path.join(self.temp_dir, 'rMATS_gene_level_output')
-                
-                logging.info('Run rMATS for differential IR in gene level')
-                rmats_cmd = rmats_script_fullpath + " -d " + self.rmats_input_gene_level_file_fullpath + " -o " + rmats_gene_level_output_temp_dir + " -c " + str(self.params['cutoff']) + " -p 4 -t " + self.params['analysistype']
-                p = subprocess.Popen(rmats_cmd, shell=True)
-                p.wait()
-                
-                rmats_result_gene_level_df = pd.read_csv(os.path.join(rmats_gene_level_output_temp_dir, 'rMATS_Result.txt'), header=0, sep='\t').loc[:, ['gene_id', 'PValue', 'FDR', 'IncLevel1', 'IncLevel2', 'IncLevelDifference']]
-                rmats_result_gene_level_df['IncLevelDifference'] = - rmats_result_gene_level_df['IncLevelDifference']
-                rmats_result_gene_level_df.rename(columns={'IncLevel1': 'gene_IRI_S1', 'IncLevel2': 'gene_IRI_S2', 'IncLevelDifference': 'gene_IRI_difference'}, inplace=True)
-                
-                outfile = self.params['name'] + '.diff.IRI.genes.txt'
-                outfile_fullpath = os.path.join(self.params['outdir'], outfile)
-                logging.info("Writing gene level differential IR result to file: %s" % outfile_fullpath)
-                rmats_result_gene_level_df.to_csv(outfile_fullpath, index=None, sep='\t')                 
+        @staticmethod
+        def count_distinct_vals(num_IRI_S1, num_IRI_S2):
+                distinct_vals = []
+                for x in num_IRI_S1:
+                        if x not in distinct_vals:
+                                distinct_vals.append(x)
+                for x in num_IRI_S2:
+                        if x not in distinct_vals:
+                                distinct_vals.append(x)
+                return len(distinct_vals)
+                                            
+        def generate_input_intron_level(self):
+                logging.info("Generating inputs for analysis for differential IR in intron level")
 
+                temp_dict = {}
+
+                for i in range(len(self.params['s1files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRI.introns.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        if not temp_dict:
+                                for l in lines:
+                                        temp_dict[l.split()[0]] = ([l.split()[8]], [])
+                        else:
+                                for l in lines:
+                                        temp_dict[l.split()[0]][0].append(l.split()[8])
+                        data.close()
+
+                for i in range(len(self.params['s2files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRI.introns.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        for l in lines:
+                                temp_dict[l.split()[0]][1].append(l.split()[8])
+                        data.close()
+
+                del temp_dict["CIR_id"]
+                self.input_intron_dict = temp_dict
+
+                input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRI.introns.txt")
+                input_file = open(input_file_path, "w")
+                input_file.write("CIR_id\tintron_IRI_S1\tintron_IRI_S2\n")
+                for id in sorted(self.input_intron_dict.keys()):
+                        input_file.write(id + "\t" + ",".join(self.input_intron_dict[id][0]) + "\t" + ",".join(self.input_intron_dict[id][1]) + "\n")
+                input_file.close()
+                
+                logging.info("Intron level analysis inputs can be found in " + input_file_path)
+
+        def generate_input_gene_level(self):
+                logging.info("Generating inputs for analysis for differential IR in gene level")
+
+                temp_dict = {}
+
+                for i in range(len(self.params['s1files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRI.genes.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        if not temp_dict:
+                                for l in lines:
+                                        temp_dict[l.split()[0]] = ([l.split()[8]], [])
+                        else:
+                                for l in lines:
+                                        temp_dict[l.split()[0]][0].append(l.split()[8])
+                        data.close()
+
+                for i in range(len(self.params['s2files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRI.genes.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        for l in lines:
+                                temp_dict[l.split()[0]][1].append(l.split()[8])
+                        data.close()
+
+                del temp_dict["gene_id"]
+                self.input_gene_dict = temp_dict
+
+                input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRI.genes.txt")
+                input_file = open(input_file_path, "w")
+                input_file.write("gene_id\tgene_IRI_S1\tgene_IRI_S2\n")
+                for id in sorted(self.input_gene_dict.keys()):
+                        input_file.write(id + "\t" + ",".join(self.input_gene_dict[id][0]) + "\t" + ",".join(self.input_gene_dict[id][1]) + "\n")
+                input_file.close()
+
+                logging.info("Gene level analysis inputs can be found at " + input_file_path)
+
+        def run_analysis_intron_level(self):
+                logging.info("Running analysis for differential IR in intron level")
+
+                filtered_introns = {}
+                pval_list = []
+                IRI_diff_list = []
+
+                for id in sorted(self.input_intron_dict.keys()):
+                        intron_IRI_S1 = self.input_intron_dict[id][0]
+                        intron_IRI_S2 = self.input_intron_dict[id][1]
+                        num_intron_IRI_S1 = []
+                        num_intron_IRI_S2 = []
+                        if self.params["analysistype"] == "P":
+                                for i, val in enumerate(intron_IRI_S1):
+                                        if val != "NA" and val != 'inf' and intron_IRI_S2[i] != "NA" and intron_IRI_S2[i] != 'inf':
+                                                num_intron_IRI_S1.append(float(val))
+                                                num_intron_IRI_S2.append(float(intron_IRI_S2[i]))
+                        else:
+                                num_intron_IRI_S1 = [float(x) for x in intron_IRI_S1 if x != "NA" and x != 'inf']
+                                num_intron_IRI_S2 = [float(x) for x in intron_IRI_S2 if x != "NA" and x != 'inf']
+                        if self.count_distinct_vals(num_intron_IRI_S1, num_intron_IRI_S2) == 1:
+                                continue
+                        if len(num_intron_IRI_S1) < 2 or len(num_intron_IRI_S2) < 2:
+                                continue
+                        filtered_introns[id] = (intron_IRI_S1, intron_IRI_S2)
+                        if self.params["analysistype"] == "P":
+                                pval_list.append(scipy.stats.ttest_rel(num_intron_IRI_S1, num_intron_IRI_S2)[1])
+                        else:
+                                pval_list.append(scipy.stats.ttest_ind(num_intron_IRI_S1, num_intron_IRI_S2)[1])
+                        diff = mean(num_intron_IRI_S2) - mean(num_intron_IRI_S1)
+                        IRI_diff_list.append(diff)
+
+                fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
+                
+                results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRI.introns.txt")
+                results_file = open(results_file_path, "w")
+                results_file.write("CIR_id\tPValue\tFDR\tintron_IRI_S1\tintron_IRI_S2\tintron_IRI_difference\n")
+                for i, id in enumerate(sorted(filtered_introns.keys())):
+                        results_file.write(id + "\t" + str(pval_list[i]) + "\t" + str(fdr_pval_list[i]) + "\t" + ",".join(filtered_introns[id][0]) + "\t" + ",".join(filtered_introns[id][1]) + "\t" + str(IRI_diff_list[i]) + "\n")
+                results_file.close()
+
+                logging.info("Intron level differential IR results can be found in " + results_file_path)
+
+        def run_analysis_gene_level(self):
+                logging.info("Running analysis for differential IR in gene level")
+
+                filtered_genes = {}
+                pval_list = []
+                IRI_diff_list = []
+
+                for id in sorted(self.input_gene_dict.keys()):
+                        gene_IRI_S1 = self.input_gene_dict[id][0]
+                        gene_IRI_S2 = self.input_gene_dict[id][1]
+                        num_gene_IRI_S1 = []
+                        num_gene_IRI_S2 = []
+                        if self.params["analysistype"] == "P":
+                                for i, val in enumerate(gene_IRI_S1):
+                                        if val != "NA" and val != 'inf' and gene_IRI_S2[i] != "NA" and gene_IRI_S2[i] != 'inf':
+                                                num_gene_IRI_S1.append(float(val))
+                                                num_gene_IRI_S2.append(float(gene_IRI_S2[i]))
+                        else:
+                                num_gene_IRI_S1 = [float(x) for x in gene_IRI_S1 if x != "NA" and x != 'inf']
+                                num_gene_IRI_S2 = [float(x) for x in gene_IRI_S2 if x != "NA" and x != 'inf']
+                        if self.count_distinct_vals(num_gene_IRI_S1, num_gene_IRI_S2) == 1:
+                                continue
+                        if len(num_gene_IRI_S1) < 2 or len(num_gene_IRI_S2) < 2:
+                                continue
+                        filtered_genes[id] = (gene_IRI_S1, gene_IRI_S2)
+                        if self.params["analysistype"] == "P":
+                                pval_list.append(scipy.stats.ttest_rel(num_gene_IRI_S1, num_gene_IRI_S2)[1])
+                        else:
+                                pval_list.append(scipy.stats.ttest_ind(num_gene_IRI_S1, num_gene_IRI_S2)[1])
+                        diff = mean(num_gene_IRI_S2) - mean(num_gene_IRI_S1)
+                        IRI_diff_list.append(diff)
+
+                fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
+
+                results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRI.genes.txt")
+                results_file = open(results_file_path, "w")
+                results_file.write("gene_id\tPValue\tFDR\tgene_IRI_S1\tgene_IRI_S2\tgene_IRI_difference\n")
+                for i, id in enumerate(sorted(filtered_genes.keys())):
+                        results_file.write(id + "\t" + str(pval_list[i]) + "\t" + str(fdr_pval_list[i]) + "\t" + ",".join(filtered_genes[id][0]) + "\t" + ",".join(filtered_genes[id][1]) + "\t" + str(IRI_diff_list[i]) + "\n")
+                results_file.close()
+
+                logging.info("Gene level differential IR results can be found in " + results_file_path)
 
 class IRC_diff(object):      
         def __init__(self, args):
@@ -366,209 +413,289 @@ class IRC_diff(object):
                 self.IRC_gene_level_data = {'s1_data': IRC_gene_level_df_s1_list,
                                             's2_data': IRC_gene_level_df_s2_list}
                 
-                self.logger.disabled = False  
-                
-        @staticmethod        
-        def filter_invalid_rows(df):
-                df['sum_IC_S1'] = df.apply(lambda row: sum([float(x) for x in row['IC_S1'].split(',')]), axis=1)
-                df['sum_SC_S1'] = df.apply(lambda row: sum([float(x) for x in row['SC_S1'].split(',')]), axis=1)
-                
-                df['sum_IC_S2'] = df.apply(lambda row: sum([float(x) for x in row['IC_S2'].split(',')]), axis=1)
-                df['sum_SC_S2'] = df.apply(lambda row: sum([float(x) for x in row['SC_S2'].split(',')]), axis=1)   
-                
-                df = df[(df['sum_IC_S1'] + df['sum_SC_S1'] > 0) & (df['sum_IC_S2'] + df['sum_SC_S2'] > 0) & ((df['sum_IC_S1']  != 0) | (df['sum_IC_S2'] != 0)) & ((df['sum_SC_S1']  != 0) | (df['sum_SC_S2'] != 0)) & (df['IncFormLen'] != 0) & (df['SkipFormLen'] != 0)]
-                return df.drop(labels=['sum_IC_S1', 'sum_SC_S1', 'sum_IC_S2', 'sum_SC_S2'], axis=1)
-        
-        def generate_rmats_input_junction_level(self):
-                logging.info("Generate inputs for rMATS for differential IR in junction level")
-                
-                rmats_input_junction_level_df = None
-                
-                for i, IRC_junction_level_df in enumerate(self.IRC_junction_level_data['s1_data']):
-                        if rmats_input_junction_level_df is None:
-                                rmats_input_junction_level_df = IRC_junction_level_df.loc[:,['CJ_id', 'CJ_retained_reads', 'CJ_spliced_reads']]    
-                                rmats_input_junction_level_df['IncFormLen'] = 1
-                                rmats_input_junction_level_df['SkipFormLen'] = 1                                
+                self.logger.disabled = False
+
+        @staticmethod
+        def count_distinct_vals(num_IRC_S1, num_IRC_S2):
+                distinct_vals = []
+                for x in num_IRC_S1:
+                        if x not in distinct_vals:
+                                distinct_vals.append(x)
+                for x in num_IRC_S2:
+                        if x not in distinct_vals:
+                                distinct_vals.append(x)
+                return len(distinct_vals)
+                                            
+        def generate_input_intron_level(self):
+                logging.info("Generating inputs for analysis for differential IR in intron level")
+
+                temp_dict = {}
+
+                for i in range(len(self.params['s1files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRC.introns.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        if not temp_dict:
+                                for l in lines:
+                                        temp_dict[l.split()[0]] = ([l.split()[5]], [])
                         else:
-                                rmats_input_junction_level_df = rmats_input_junction_level_df.merge(IRC_junction_level_df.loc[:,['CJ_id', 'CJ_retained_reads', 'CJ_spliced_reads']], on='CJ_id')
-                                
-                        rmats_input_junction_level_df['IC_S1_R%d' % (i+1)] = rmats_input_junction_level_df['CJ_retained_reads']
-                        rmats_input_junction_level_df['SC_S1_R%d' % (i+1)] = rmats_input_junction_level_df['CJ_spliced_reads']
-                        rmats_input_junction_level_df.drop(labels=['CJ_retained_reads', 'CJ_spliced_reads'], axis=1, inplace=True)                        
-                                
-                for i, IRC_junction_level_df in enumerate(self.IRC_junction_level_data['s2_data']):
-                        rmats_input_junction_level_df = rmats_input_junction_level_df.merge(IRC_junction_level_df.loc[:,['CJ_id', 'CJ_retained_reads', 'CJ_spliced_reads']], on='CJ_id')
-                        rmats_input_junction_level_df['IC_S2_R%d' % (i+1)] = rmats_input_junction_level_df['CJ_retained_reads']
-                        rmats_input_junction_level_df['SC_S2_R%d' % (i+1)] = rmats_input_junction_level_df['CJ_spliced_reads']
-                        rmats_input_junction_level_df.drop(labels=['CJ_retained_reads', 'CJ_spliced_reads'], axis=1, inplace=True)                              
-                        
-                rmats_input_junction_level_df['IC_S1'] = rmats_input_junction_level_df.filter(regex=r'IC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_junction_level_df['SC_S1'] = rmats_input_junction_level_df.filter(regex=r'SC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_junction_level_df['IC_S2'] = rmats_input_junction_level_df.filter(regex=r'IC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_junction_level_df['SC_S2'] = rmats_input_junction_level_df.filter(regex=r'SC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_junction_level_df = rmats_input_junction_level_df.loc[:,['CJ_id', 'IC_S1', 'SC_S1', 'IC_S2', 'SC_S2', 'IncFormLen', 'SkipFormLen']]  
-                
-                rmats_input_junction_level_df = self.filter_invalid_rows(rmats_input_junction_level_df)
-                
-                rmats_input_junction_level_file = self.params['name'] + ".diff.rMATSinput.IRC.junctions.txt" 
-                self.rmats_input_junction_level_file_fullpath = os.path.join(self.temp_dir, rmats_input_junction_level_file)
-                logging.info("Writing junction level rMATS inputs to file: {}".format(self.rmats_input_junction_level_file_fullpath))
-                rmats_input_junction_level_df.to_csv(self.rmats_input_junction_level_file_fullpath, index=None, sep='\t', na_rep="NA")
-                
-        def generate_rmats_input_intron_level(self):
-                logging.info("Generate inputs for rMATS for differential IR in intron level")
-                
-                rmats_input_intron_level_df = None
-                
-                for i, IRC_intron_level_df in enumerate(self.IRC_intron_level_data['s1_data']):
-                        if rmats_input_intron_level_df is None:
-                                rmats_input_intron_level_df = IRC_intron_level_df.loc[:,['CIR_id', "CIR_5'retained_reads", "CIR_3'retained_reads", 'CIR_spliced_reads']]    
-                                rmats_input_intron_level_df['IncFormLen'] = 100
-                                rmats_input_intron_level_df['SkipFormLen'] = 100                                
+                                for l in lines:
+                                        temp_dict[l.split()[0]][0].append(l.split()[5])
+                        data.close()
+
+                for i in range(len(self.params['s2files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRC.introns.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        for l in lines:
+                                temp_dict[l.split()[0]][1].append(l.split()[5])
+                        data.close()
+
+                del temp_dict["CIR_id"]
+                self.input_intron_dict = temp_dict
+
+                input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRC.introns.txt")
+                input_file = open(input_file_path, "w")
+                input_file.write("CIR_id\tintron_IRC_S1\tintron_IRC_S2\n")
+                for id in sorted(self.input_intron_dict.keys()):
+                        input_file.write(id + "\t" + ",".join(self.input_intron_dict[id][0]) + "\t" + ",".join(self.input_intron_dict[id][1]) + "\n")
+                input_file.close()
+
+                logging.info("Intron level analysis inputs can be found in " + input_file_path)
+
+        def generate_input_gene_level(self):
+                logging.info("Generating inputs for analysis for differential IR in gene level")
+
+                temp_dict = {}
+
+                for i in range(len(self.params['s1files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRC.genes.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        if not temp_dict:
+                                for l in lines:
+                                        temp_dict[l.split()[0]] = ([l.split()[4]], [])
                         else:
-                                rmats_input_intron_level_df = rmats_input_intron_level_df.merge(IRC_intron_level_df.loc[:,['CIR_id', "CIR_5'retained_reads", "CIR_3'retained_reads", 'CIR_spliced_reads']], on='CIR_id')
-                                
-                        rmats_input_intron_level_df['IC_S1_R%d' % (i+1)] = (rmats_input_intron_level_df["CIR_5'retained_reads"] + rmats_input_intron_level_df["CIR_3'retained_reads"]) / 2.0
-                        rmats_input_intron_level_df['SC_S1_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_spliced_reads']
-                        rmats_input_intron_level_df.drop(labels=["CIR_5'retained_reads", "CIR_3'retained_reads", 'CIR_spliced_reads'], axis=1, inplace=True)                        
-                                
-                for i, IRC_intron_level_df in enumerate(self.IRC_intron_level_data['s2_data']):
-                        rmats_input_intron_level_df = rmats_input_intron_level_df.merge(IRC_intron_level_df.loc[:,['CIR_id', "CIR_5'retained_reads", "CIR_3'retained_reads", 'CIR_spliced_reads']], on='CIR_id')
-                        rmats_input_intron_level_df['IC_S2_R%d' % (i+1)] = (rmats_input_intron_level_df["CIR_5'retained_reads"] + rmats_input_intron_level_df["CIR_3'retained_reads"]) / 2.0
-                        rmats_input_intron_level_df['SC_S2_R%d' % (i+1)] = rmats_input_intron_level_df['CIR_spliced_reads']
-                        rmats_input_intron_level_df.drop(labels=["CIR_5'retained_reads", "CIR_3'retained_reads", 'CIR_spliced_reads'], axis=1, inplace=True) 
-                        
-                rmats_input_intron_level_df['IC_S1'] = rmats_input_intron_level_df.filter(regex=r'IC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df['SC_S1'] = rmats_input_intron_level_df.filter(regex=r'SC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df['IC_S2'] = rmats_input_intron_level_df.filter(regex=r'IC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df['SC_S2'] = rmats_input_intron_level_df.filter(regex=r'SC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_intron_level_df = rmats_input_intron_level_df.loc[:,['CIR_id', 'IC_S1', 'SC_S1', 'IC_S2', 'SC_S2', 'IncFormLen', 'SkipFormLen']] 
-                
-                rmats_input_intron_level_df = self.filter_invalid_rows(rmats_input_intron_level_df)
-                
-                rmats_input_intron_level_file = self.params['name'] + ".diff.rMATSinput.IRC.introns.txt" 
-                self.rmats_input_intron_level_file_fullpath = os.path.join(self.temp_dir, rmats_input_intron_level_file)
-                logging.info("Writing intron level rMATS inputs to file: {}".format(self.rmats_input_intron_level_file_fullpath))
-                rmats_input_intron_level_df.to_csv(self.rmats_input_intron_level_file_fullpath, index=None, sep='\t', na_rep="NA") 
-                
-        def generate_rmats_input_gene_level(self):
-                logging.info("Generate inputs for rMATS for differential IR in gene level")
-                
-                rmats_input_gene_level_df = None
-                
-                for i, IRC_gene_level_df in enumerate(self.IRC_gene_level_data['s1_data']):
-                        if rmats_input_gene_level_df is None:
-                                rmats_input_gene_level_df = IRC_gene_level_df.loc[:,['gene_id', 'gene_retained_reads', 'gene_spliced_reads']]    
-                                rmats_input_gene_level_df['IncFormLen'] = 100
-                                rmats_input_gene_level_df['SkipFormLen'] = 100                               
+                                for l in lines:
+                                        temp_dict[l.split()[0]][0].append(l.split()[4])
+                        data.close()
+
+                for i in range(len(self.params['s2files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRC.genes.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        for l in lines:
+                                temp_dict[l.split()[0]][1].append(l.split()[4])
+                        data.close()
+
+                del temp_dict["gene_id"]
+                self.input_gene_dict = temp_dict
+
+                input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRC.genes.txt")
+                input_file = open(input_file_path, "w")
+                input_file.write("gene_id\tgene_IRC_S1\tgene_IRC_S2\n")
+                for id in sorted(self.input_gene_dict.keys()):
+                        input_file.write(id + "\t" + ",".join(self.input_gene_dict[id][0]) + "\t" + ",".join(self.input_gene_dict[id][1]) + "\n")
+                input_file.close()
+
+                logging.info("Gene level analysis inputs can be found at " + input_file_path)
+
+        def generate_input_junction_level(self):
+                logging.info("Generating inputs for analysis for differential IR in junction level")
+
+                temp_dict = {}
+
+                for i in range(len(self.params['s1files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRC.junctions.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        if not temp_dict:
+                                for l in lines:
+                                        temp_dict[l.split()[0]] = ([l.split()[5]], [])
                         else:
-                                rmats_input_gene_level_df = rmats_input_gene_level_df.merge(IRC_gene_level_df.loc[:,['gene_id', 'gene_retained_reads', 'gene_spliced_reads']], on='gene_id')
-                                
-                        rmats_input_gene_level_df['IC_S1_R%d' % (i+1)] = rmats_input_gene_level_df['gene_retained_reads']
-                        rmats_input_gene_level_df['SC_S1_R%d' % (i+1)] = rmats_input_gene_level_df['gene_spliced_reads']
-                        rmats_input_gene_level_df.drop(labels=['gene_retained_reads', 'gene_spliced_reads'], axis=1, inplace=True)                        
-                                
-                for i, IRC_gene_level_df in enumerate(self.IRC_gene_level_data['s2_data']):
-                        rmats_input_gene_level_df = rmats_input_gene_level_df.merge(IRC_gene_level_df.loc[:,['gene_id', 'gene_retained_reads', 'gene_spliced_reads']], on='gene_id')
-                        rmats_input_gene_level_df['IC_S2_R%d' % (i+1)] = rmats_input_gene_level_df['gene_retained_reads']
-                        rmats_input_gene_level_df['SC_S2_R%d' % (i+1)] = rmats_input_gene_level_df['gene_spliced_reads']
-                        rmats_input_gene_level_df.drop(labels=['gene_retained_reads', 'gene_spliced_reads'], axis=1, inplace=True)                           
-                        
-                rmats_input_gene_level_df['IC_S1'] = rmats_input_gene_level_df.filter(regex=r'IC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df['SC_S1'] = rmats_input_gene_level_df.filter(regex=r'SC_S1').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df['IC_S2'] = rmats_input_gene_level_df.filter(regex=r'IC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df['SC_S2'] = rmats_input_gene_level_df.filter(regex=r'SC_S2').apply(lambda row: ','.join([str(item) for item in row.values]), axis=1)
-                rmats_input_gene_level_df = rmats_input_gene_level_df.loc[:,['gene_id', 'IC_S1', 'SC_S1', 'IC_S2', 'SC_S2', 'IncFormLen', 'SkipFormLen']]  
-                
-                rmats_input_gene_level_df = self.filter_invalid_rows(rmats_input_gene_level_df)
-                
-                rmats_input_gene_level_file = self.params['name'] + ".diff.rMATSinput.IRC.genes.txt" 
-                self.rmats_input_gene_level_file_fullpath = os.path.join(self.temp_dir, rmats_input_gene_level_file)
-                logging.info("Writing gene level rMATS inputs to file: {}".format(self.rmats_input_gene_level_file_fullpath))
-                rmats_input_gene_level_df.to_csv(self.rmats_input_gene_level_file_fullpath, index=None, sep='\t', na_rep="NA") 
-                
-        def run_rmats_junction_level(self):
-                rmats_script_dir = pkg_resources.resource_filename('IRTools', "utility/rMATS")
-                rmats_script_fullpath = os.path.join(rmats_script_dir, 'rMATS.sh')
-                rmats_junction_level_output_temp_dir = os.path.join(self.temp_dir, 'rMATS_junction_level_output')
-                
-                logging.info('Run rMATS for differential IR in junction level')
-                rmats_cmd = rmats_script_fullpath + " -d " + self.rmats_input_junction_level_file_fullpath + " -o " + rmats_junction_level_output_temp_dir + " -c " + str(self.params['cutoff']) + " -p 4 -t " + self.params['analysistype']
-                p = subprocess.Popen(rmats_cmd, shell=True)
-                p.wait()
-                
-                rmats_result_junction_level_df = pd.read_csv(os.path.join(rmats_junction_level_output_temp_dir, 'rMATS_Result.txt'), header=0, sep='\t').loc[:, ['CJ_id', 'PValue', 'FDR', 'IncLevel1', 'IncLevel2', 'IncLevelDifference']]
-                rmats_result_junction_level_df['IncLevelDifference'] = - rmats_result_junction_level_df['IncLevelDifference']
-                rmats_result_junction_level_df.rename(columns={'IncLevel1': 'junction_IRC_S1', 'IncLevel2': 'junction_IRC_S2', 'IncLevelDifference': 'junction_IRC_difference'}, inplace=True)
-                
-                outfile = self.params['name'] + '.diff.IRC.junctions.txt'
-                outfile_fullpath = os.path.join(self.params['outdir'], outfile)
-                logging.info("Writing junction level differential IR result to file: %s" % outfile_fullpath)
-                rmats_result_junction_level_df.to_csv(outfile_fullpath, index=None, sep='\t') 
-                
-        def run_rmats_intron_level(self):
-                rmats_script_dir = pkg_resources.resource_filename('IRTools', "utility/rMATS")
-                rmats_script_fullpath = os.path.join(rmats_script_dir, 'rMATS.sh')
-                rmats_intron_level_output_temp_dir = os.path.join(self.temp_dir, 'rMATS_intron_level_output')
-                
-                logging.info('Run rMATS for differential IR in intron level')
-                rmats_cmd = rmats_script_fullpath + " -d " + self.rmats_input_intron_level_file_fullpath + " -o " + rmats_intron_level_output_temp_dir + " -c " + str(self.params['cutoff']) + " -p 4 -t " + self.params['analysistype']
-                p = subprocess.Popen(rmats_cmd, shell=True)
-                p.wait()
-                
-                rmats_result_intron_level_df = pd.read_csv(os.path.join(rmats_intron_level_output_temp_dir, 'rMATS_Result.txt'), header=0, sep='\t').loc[:, ['CIR_id', 'PValue', 'FDR', 'IncLevel1', 'IncLevel2', 'IncLevelDifference']]
-                rmats_result_intron_level_df['IncLevelDifference'] = - rmats_result_intron_level_df['IncLevelDifference']
-                rmats_result_intron_level_df.rename(columns={'IncLevel1': 'intron_IRC_S1', 'IncLevel2': 'intron_IRC_S2', 'IncLevelDifference': 'intron_IRC_difference'}, inplace=True)
-                
-                outfile = self.params['name'] + '.diff.IRC.introns.txt'
-                outfile_fullpath = os.path.join(self.params['outdir'], outfile)
-                logging.info("Writing intron level differential IR result to file: %s" % outfile_fullpath)
-                rmats_result_intron_level_df.to_csv(outfile_fullpath, index=None, sep='\t') 
-                
-        def run_rmats_gene_level(self):
-                rmats_script_dir = pkg_resources.resource_filename('IRTools', "utility/rMATS")
-                rmats_script_fullpath = os.path.join(rmats_script_dir, 'rMATS.sh')
-                rmats_gene_level_output_temp_dir = os.path.join(self.temp_dir, 'rMATS_gene_level_output')
-                
-                logging.info('Run rMATS for differential IR in gene level')
-                rmats_cmd = rmats_script_fullpath + " -d " + self.rmats_input_gene_level_file_fullpath + " -o " + rmats_gene_level_output_temp_dir + " -c " + str(self.params['cutoff']) + " -p 4 -t " + self.params['analysistype']
-                p = subprocess.Popen(rmats_cmd, shell=True)
-                p.wait()
-                
-                rmats_result_gene_level_df = pd.read_csv(os.path.join(rmats_gene_level_output_temp_dir, 'rMATS_Result.txt'), header=0, sep='\t').loc[:, ['gene_id', 'PValue', 'FDR', 'IncLevel1', 'IncLevel2', 'IncLevelDifference']]
-                rmats_result_gene_level_df['IncLevelDifference'] = - rmats_result_gene_level_df['IncLevelDifference']
-                rmats_result_gene_level_df.rename(columns={'IncLevel1': 'gene_IRC_S1', 'IncLevel2': 'gene_IRC_S2', 'IncLevelDifference': 'gene_IRC_difference'}, inplace=True)
-                
-                outfile = self.params['name'] + '.diff.IRC.genes.txt'
-                outfile_fullpath = os.path.join(self.params['outdir'], outfile)
-                logging.info("Writing gene level differential IR result to file: %s" % outfile_fullpath)
-                rmats_result_gene_level_df.to_csv(outfile_fullpath, index=None, sep='\t')  
+                                for l in lines:
+                                        temp_dict[l.split()[0]][0].append(l.split()[5])
+                        data.close()
+
+                for i in range(len(self.params['s2files'].split(','))):
+                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRC.junctions.txt" % (i + 1))
+                        data = open(file_path, "r")
+                        lines = [x.strip("\n") for x in data if x != "\n"]
+                        for l in lines:
+                                temp_dict[l.split()[0]][1].append(l.split()[5])
+                        data.close()
+
+                del temp_dict["CJ_id"]
+                self.input_junction_dict = temp_dict
+
+                input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRC.junctions.txt")
+                input_file = open(input_file_path, "w")
+                input_file.write("CJ_id\tjunction_IRC_S1\tjunction_IRC_S2\n")
+                for id in sorted(self.input_junction_dict.keys()):
+                        input_file.write(id + "\t" + ",".join(self.input_junction_dict[id][0]) + "\t" + ",".join(self.input_junction_dict[id][1]) + "\n")
+                input_file.close()
+
+                logging.info("junction level analysis inputs can be found at " + input_file_path)
+
+        def run_analysis_intron_level(self):
+                logging.info("Running analysis for differential IR in intron level")
+
+                filtered_introns = {}
+                pval_list = []
+                IRC_diff_list = []
+
+                for id in sorted(self.input_intron_dict.keys()):
+                        intron_IRC_S1 = self.input_intron_dict[id][0]
+                        intron_IRC_S2 = self.input_intron_dict[id][1]
+                        num_intron_IRC_S1 = []
+                        num_intron_IRC_S2 = []
+                        if self.params["analysistype"] == "P":
+                                for i, val in enumerate(intron_IRC_S1):
+                                        if val != "NA" and val != 'inf' and intron_IRC_S2[i] != "NA" and intron_IRC_S2[i] != 'inf':
+                                                num_intron_IRC_S1.append(float(val))
+                                                num_intron_IRC_S2.append(float(intron_IRC_S2[i]))
+                        else:
+                                num_intron_IRC_S1 = [float(x) for x in intron_IRC_S1 if x != "NA" and x != 'inf']
+                                num_intron_IRC_S2 = [float(x) for x in intron_IRC_S2 if x != "NA" and x != 'inf']
+                        if self.count_distinct_vals(num_intron_IRC_S1, num_intron_IRC_S2) == 1:
+                                continue
+                        if len(num_intron_IRC_S1) < 2 or len(num_intron_IRC_S2) < 2:
+                                continue
+                        filtered_introns[id] = (intron_IRC_S1, intron_IRC_S2)
+                        if self.params["analysistype"] == "P":
+                                pval_list.append(scipy.stats.ttest_rel(num_intron_IRC_S1, num_intron_IRC_S2)[1])
+                        else:
+                                pval_list.append(scipy.stats.ttest_ind(num_intron_IRC_S1, num_intron_IRC_S2)[1])
+                        diff = mean(num_intron_IRC_S2) - mean(num_intron_IRC_S1)
+                        IRC_diff_list.append(diff)
+
+                fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
+
+                results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRC.introns.txt")
+                results_file = open(results_file_path, "w")
+                results_file.write("CIR_id\tPValue\tFDR\tintron_IRC_S1\tintron_IRC_S2\tintron_IRC_difference\n")
+                for i, id in enumerate(sorted(filtered_introns.keys())):
+                        results_file.write(id + "\t" + str(pval_list[i]) + "\t" + str(fdr_pval_list[i]) + "\t" + ",".join(filtered_introns[id][0]) + "\t" + ",".join(filtered_introns[id][1]) + "\t" + str(IRC_diff_list[i]) + "\n")
+                results_file.close()
+
+                logging.info("Intron level differential IR results can be found in " + results_file_path)
+
+        def run_analysis_gene_level(self):
+                logging.info("Running analysis for differential IR in gene level")
+
+                filtered_genes = {}
+                pval_list = []
+                IRC_diff_list = []
+
+                for id in sorted(self.input_gene_dict.keys()):
+                        gene_IRC_S1 = self.input_gene_dict[id][0]
+                        gene_IRC_S2 = self.input_gene_dict[id][1]
+                        num_gene_IRC_S1 = []
+                        num_gene_IRC_S2 = []
+                        if self.params["analysistype"] == "P":
+                                for i, val in enumerate(gene_IRC_S1):
+                                        if val != "NA" and val != 'inf' and gene_IRC_S2[i] != "NA" and gene_IRC_S2[i] != 'inf':
+                                                num_gene_IRC_S1.append(float(val))
+                                                num_gene_IRC_S2.append(float(gene_IRC_S2[i]))
+                        else:
+                                num_gene_IRC_S1 = [float(x) for x in gene_IRC_S1 if x != "NA" and x != 'inf']
+                                num_gene_IRC_S2 = [float(x) for x in gene_IRC_S2 if x != "NA" and x != 'inf']
+                        if self.count_distinct_vals(num_gene_IRC_S1, num_gene_IRC_S2) == 1:
+                                continue
+                        if len(num_gene_IRC_S1) < 2 or len(num_gene_IRC_S2) < 2:
+                                continue
+                        filtered_genes[id] = (gene_IRC_S1, gene_IRC_S2)
+                        if self.params["analysistype"] == "P":
+                                pval_list.append(scipy.stats.ttest_rel(num_gene_IRC_S1, num_gene_IRC_S2)[1])
+                        else:
+                                pval_list.append(scipy.stats.ttest_ind(num_gene_IRC_S1, num_gene_IRC_S2)[1])
+                        diff = mean(num_gene_IRC_S2) - mean(num_gene_IRC_S1)
+                        IRC_diff_list.append(diff)
+
+                fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
+
+                results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRC.genes.txt")
+                results_file = open(results_file_path, "w")
+                results_file.write("gene_id\tPValue\tFDR\tgene_IRC_S1\tgene_IRC_S2\tgene_IRC_difference\n")
+                for i, id in enumerate(sorted(filtered_genes.keys())):
+                        results_file.write(id + "\t" + str(pval_list[i]) + "\t" + str(fdr_pval_list[i]) + "\t" + ",".join(filtered_genes[id][0]) + "\t" + ",".join(filtered_genes[id][1]) + "\t" + str(IRC_diff_list[i]) + "\n")
+                results_file.close()
+
+                logging.info("Gene level differential IR results can be found in " + results_file_path)
+
+        def run_analysis_junction_level(self):
+                logging.info("Running analysis for differential IR in junction level")
+
+                filtered_junctions = {}
+                pval_list = []
+                IRC_diff_list = []
+
+                for id in sorted(self.input_junction_dict.keys()):
+                        junction_IRC_S1 = self.input_junction_dict[id][0]
+                        junction_IRC_S2 = self.input_junction_dict[id][1]
+                        num_junction_IRC_S1 = []
+                        num_junction_IRC_S2 = []
+                        if self.params["analysistype"] == "P":
+                                for i, val in enumerate(junction_IRC_S1):
+                                        if val != "NA" and val != 'inf' and junction_IRC_S2[i] != "NA" and junction_IRC_S2[i] != 'inf':
+                                                num_junction_IRC_S1.append(float(val))
+                                                num_junction_IRC_S2.append(float(junction_IRC_S2[i]))
+                        else:
+                                num_junction_IRC_S1 = [float(x) for x in junction_IRC_S1 if x != "NA" and x != 'inf']
+                                num_junction_IRC_S2 = [float(x) for x in junction_IRC_S2 if x != "NA" and x != 'inf']
+                        if self.count_distinct_vals(num_junction_IRC_S1, num_junction_IRC_S2) == 1:
+                                continue
+                        if len(num_junction_IRC_S1) < 2 or len(num_junction_IRC_S2) < 2:
+                                continue
+                        filtered_junctions[id] = (junction_IRC_S1, junction_IRC_S2)
+                        if self.params["analysistype"] == "P":
+                                pval_list.append(scipy.stats.ttest_rel(num_junction_IRC_S1, num_junction_IRC_S2)[1])
+                        else:
+                                pval_list.append(scipy.stats.ttest_ind(num_junction_IRC_S1, num_junction_IRC_S2)[1])
+                        diff = mean(num_junction_IRC_S2) - mean(num_junction_IRC_S1)
+                        IRC_diff_list.append(diff)
+
+                fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
+
+                results_file_path = os.path.join(self.params['outdir'], self.params['name'] + ".diff.IRC.junctions.txt")
+                results_file = open(results_file_path, "w")
+                results_file.write("CJ_id\tPValue\tFDR\tjunction_IRC_S1\tjunction_IRC_S2\tjunction_IRC_difference\n")
+                for i, id in enumerate(sorted(filtered_junctions.keys())):
+                        results_file.write(id + "\t" + str(pval_list[i]) + "\t" + str(fdr_pval_list[i]) + "\t" + ",".join(filtered_junctions[id][0]) + "\t" + ",".join(filtered_junctions[id][1]) + "\t" + str(IRC_diff_list[i]) + "\n")
+                results_file.close()
+
+                logging.info("Junction level differential IR results can be found in " + results_file_path)
 
 def run(args):
         if args.quanttype == "IRI":
                 IRI_differ = IRI_diff(args)
+                if ',' not in IRI_differ.params['s1files'] or ',' not in IRI_differ.params['s2files']:
+                        logging.info("Run Aborted: Differential IR analysis requires at least two replicates per sample. Please check input.")
+                        exit()
+                if IRI_differ.params['analysistype'] == "P" and IRI_differ.params['s1files'].count(',') != IRI_differ.params['s2files'].count(','):
+                        logging.info("Run Aborted: Samples must have the same number of replicates for paired analysis. Please check input.")
+                        exit()
                 IRI_differ.run_IRI_quant_for_all_samples(args)
-                IRI_differ.generate_rmats_input_intron_level()
-                IRI_differ.generate_rmats_input_gene_level()
-                IRI_differ.run_rmats_intron_level()
-                IRI_differ.run_rmats_gene_level()
-                
+                IRI_differ.generate_input_intron_level()
+                IRI_differ.generate_input_gene_level()
+                IRI_differ.run_analysis_intron_level()
+                IRI_differ.run_analysis_gene_level()
+
         elif args.quanttype == "IRC":
                 IRC_differ = IRC_diff(args)
+                if ',' not in IRC_differ.params['s1files'] or ',' not in IRC_differ.params['s2files']:
+                        logging.info("Run Aborted: Differential IR analysis requires at least two replicates per sample. Please check input.")
+                        exit()
+                if IRC_differ.params['analysistype'] == "P" and IRC_differ.params['s1files'].count(',') != IRC_differ.params['s2files'].count(','):
+                        logging.info("Run Aborted: Samples must have the same number of replicates for paired analysis. Please check input.")
+                        exit()
                 IRC_differ.run_IRC_quant_for_all_samples(args)
-                IRC_differ.generate_rmats_input_junction_level()
-                IRC_differ.generate_rmats_input_intron_level()
-                IRC_differ.generate_rmats_input_gene_level()
-                IRC_differ.run_rmats_junction_level()
-                IRC_differ.run_rmats_intron_level()
-                IRC_differ.run_rmats_gene_level()
-
-
-
-
-
-
-
+                IRI_differ.generate_input_intron_level()
+                IRI_differ.generate_input_gene_level()
+                IRI_differ.generate_input_junction_level()
+                IRI_differ.run_analysis_intron_level()
+                IRI_differ.run_analysis_gene_level()
+                IRI_differ.run_analysis_junction_level()
 
 
 

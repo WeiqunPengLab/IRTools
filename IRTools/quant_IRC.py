@@ -47,7 +47,7 @@ class IRC_quant(object):
         @staticmethod        
         def valid_annofile(annofile):
                 gtffile = HTSeq.GFF_Reader(annofile, end_included=True)
-                feature_types = set(map(lambda feat: feat.type, itertools.islice(gtffile, 1000)))
+                feature_types = set([feat.type for feat in itertools.islice(gtffile, 1000)])
                 for feat in ['gene_region', 'constitutive_exonic_region', 'constitutive_intronic_region', 'constitutive_junction']:
                         if feat not in feature_types:
                                 raise Exception("Annotations for \"{}\" are missed in {}. Please generate valid annotation GTF file by \"IRTools annotation\" command.".format(feat, annofile))
@@ -86,7 +86,7 @@ class IRC_quant(object):
         
         @staticmethod                     
         def CIR_has_both_upstream_and_downstream_CERs(feature):
-                return 'upstream_constitutive_junction_number' in feature.attr.keys() and 'downstream_constitutive_junction_number' in feature.attr.keys()        
+                return 'upstream_constitutive_junction_number' in list(feature.attr.keys()) and 'downstream_constitutive_junction_number' in list(feature.attr.keys())        
         
         def summarize_gene_CJ(self):
                 gene_CJ_database = collections.defaultdict( lambda: {} )
@@ -235,12 +235,12 @@ class IRC_quant(object):
                 junction_to_pos = junction.iv.start
                 if gene_strand == "+":
                         junction_from_pos = junction_to_pos - 1
-                        junction_to_pos_list = range(junction_to_pos, junction_to_pos + overlap)
-                        junction_from_pos_list = range(junction_from_pos - overlap + 1, junction_from_pos + 1)
+                        junction_to_pos_list = list(range(junction_to_pos, junction_to_pos + overlap))
+                        junction_from_pos_list = list(range(junction_from_pos - overlap + 1, junction_from_pos + 1))
                 elif gene_strand == "-":
                         junction_from_pos = junction_to_pos + 1
-                        junction_to_pos_list = range(junction_to_pos - overlap + 1, junction_to_pos + 1)
-                        junction_from_pos_list = range(junction_from_pos, junction_from_pos + overlap)                
+                        junction_to_pos_list = list(range(junction_to_pos - overlap + 1, junction_to_pos + 1))
+                        junction_from_pos_list = list(range(junction_from_pos, junction_from_pos + overlap))
                 
                 return junction_from_pos_list, junction_to_pos_list
         
@@ -378,17 +378,17 @@ class IRC_quant(object):
                 
                 if gene_strand == "+":
                         upstream_junction_from_pos = upstream_CJ.iv.start - 1
-                        upstream_junction_from_pos_list = range(upstream_junction_from_pos - overlap + 1, upstream_junction_from_pos + 1)
+                        upstream_junction_from_pos_list = list(range(upstream_junction_from_pos - overlap + 1, upstream_junction_from_pos + 1))
                         
                         downstream_junction_to_pos = downstream_CJ.iv.start
-                        downstream_junction_to_pos_list = range(downstream_junction_to_pos, downstream_junction_to_pos + overlap)
+                        downstream_junction_to_pos_list = list(range(downstream_junction_to_pos, downstream_junction_to_pos + overlap))
                         
                 elif gene_strand == "-":
                         upstream_junction_from_pos = upstream_CJ.iv.start + 1
-                        upstream_junction_from_pos_list = range(upstream_junction_from_pos, upstream_junction_from_pos + overlap)
+                        upstream_junction_from_pos_list = list(range(upstream_junction_from_pos, upstream_junction_from_pos + overlap))
                         
                         downstream_junction_to_pos = downstream_CJ.iv.start
-                        downstream_junction_to_pos_list = range(downstream_junction_to_pos - overlap + 1, downstream_junction_to_pos + 1)   
+                        downstream_junction_to_pos_list = list(range(downstream_junction_to_pos - overlap + 1, downstream_junction_to_pos + 1))   
                         
                 upstream_junction_from_pos_index = self.find_pos_in_bisect_list(upstream_junction_from_pos_list, start_list, end_list)
                 downstream_junction_to_pos_index = self.find_pos_in_bisect_list(downstream_junction_to_pos_list, start_list, end_list)
@@ -425,9 +425,9 @@ class IRC_quant(object):
                                         alt_iv_seq = self.get_alt_iv(alt)    
                                         if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):                                             
                                                 gene_id = self.read_associated_gene(alt_iv_seq)
-                                                for CJ in self.gene_CJ_database[gene_id].values():
+                                                for CJ in list(self.gene_CJ_database[gene_id].values()):
                                                         self.assign_read_to_CJ(alt_iv_seq, CJ)
-                                                for CIR in self.gene_CIR_database[gene_id].values():
+                                                for CIR in list(self.gene_CIR_database[gene_id].values()):
                                                         self.assign_read_to_CIR(alt_iv_seq, CIR)
                                                         
                 elif self.params['readtype'] == "paired":
@@ -440,9 +440,9 @@ class IRC_quant(object):
                                         
                                         if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):   
                                                 gene_id = self.read_associated_gene(alt_iv_seq)
-                                                for CJ in self.gene_CJ_database[gene_id].values():
+                                                for CJ in list(self.gene_CJ_database[gene_id].values()):
                                                         self.assign_read_to_CJ(alt_iv_seq, CJ)
-                                                for CIR in self.gene_CIR_database[gene_id].values():
+                                                for CIR in list(self.gene_CIR_database[gene_id].values()):
                                                         self.assign_read_to_CIR(alt_iv_seq, CIR)
                                                         
         @staticmethod
@@ -570,8 +570,8 @@ class IRC_quant(object):
                 
                 IRC_gene_level_data = []
                 for gene_id in sorted(self.CIR_counts.keys()):
-                        gene_retained_reads = self.gene_counts["gene_retained_reads"][gene_id] = sum([(self.CIR_counts[gene_id][CIR_number]["CIR_5'retained_reads"] + self.CIR_counts[gene_id][CIR_number]["CIR_3'retained_reads"]) / 2.0 for CIR_number in self.CIR_counts[gene_id].keys()])
-                        gene_spliced_reads = self.gene_counts["gene_spliced_reads"][gene_id] = sum([self.CIR_counts[gene_id][CIR_number]["CIR_spliced_reads"] for CIR_number in self.CIR_counts[gene_id].keys()])
+                        gene_retained_reads = self.gene_counts["gene_retained_reads"][gene_id] = sum([(self.CIR_counts[gene_id][CIR_number]["CIR_5'retained_reads"] + self.CIR_counts[gene_id][CIR_number]["CIR_3'retained_reads"]) / 2.0 for CIR_number in list(self.CIR_counts[gene_id].keys())])
+                        gene_spliced_reads = self.gene_counts["gene_spliced_reads"][gene_id] = sum([self.CIR_counts[gene_id][CIR_number]["CIR_spliced_reads"] for CIR_number in list(self.CIR_counts[gene_id].keys())])
                         
                         gene_IRC = np.divide(gene_retained_reads * 1.0, gene_retained_reads + gene_spliced_reads)
                         
@@ -598,7 +598,7 @@ class IRC_quant(object):
                 IRC_genome_wide = total_retained_reads * 1.0 / total_reads
                 
                 logging.info("Genome-wide intron retention statistics of the library:")
-                print("\tTotal retained reads: %i (%.2f%%)" % (total_retained_reads, total_retained_reads * 100.0 / total_reads))
-                print("\tTotal spliced reads: %i (%.2f%%)" % (total_spliced_reads, total_spliced_reads * 100.0 / total_reads))
-                print("\tTotal junction reads (retained reads + spliced reads): %i" % (total_retained_reads + total_spliced_reads))
-                print("\tGenomoe-wide IRC: %f" % IRC_genome_wide)                 
+                print(("\tTotal retained reads: %i (%.2f%%)" % (total_retained_reads, total_retained_reads * 100.0 / total_reads)))
+                print(("\tTotal spliced reads: %i (%.2f%%)" % (total_spliced_reads, total_spliced_reads * 100.0 / total_reads)))
+                print(("\tTotal junction reads (retained reads + spliced reads): %i" % (total_retained_reads + total_spliced_reads)))
+                print(("\tGenome-wide IRC: %f" % IRC_genome_wide))

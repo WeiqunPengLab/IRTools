@@ -173,15 +173,12 @@ def add_diff_parser( subparsers ):
                                   help = "Intron retention (IR) quantifiation types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: \"IRI\".",
                                   default = "IRI")   
         group_general.add_argument( "-s1", "--s1-files", dest = "s1files", type = str,
-                                    help = "A comma-separated list of RNA-Seq alignment BAM files for sample 1." )  
+                                    help = "A comma-separated list of RNA-Seq alignment BAM files for sample 1." ) 
         group_general.add_argument( "-s2", "--s2-files", dest = "s2files", type = str,
-                                    help = "A comma-separated list of RNA-Seq alignment BAM files for sample 2." )        
-        group_general.add_argument( "-c", "--cutoff", dest = "cutoff", type = float,
-                                  help = "The cutoff of IR difference between sample 1 and sample 2. The cutoff is used in the null hypothesis test for detecting IR change. DEFAULT: 0.1 difference.",
-                                  default = 0.1)
+                                    help = "A comma-separated list of RNA-Seq alignment BAM files for sample 2." )
         group_general.add_argument( "-t", "--analysis-type", dest = "analysistype", type = str, choices = ("P", "U"),
                                   help = "Type of analysis performed. \"P\" is for paired replicates analysis and \"U\" is for unpaired replicates analysis. DEFAULT: \"U\".",
-                                  default = "U" )          
+                                  default = "U" ) # Requires same sample size in each sample         
         group_general.add_argument( "-p", "--read-type", dest = "readtype", type = str, choices = ("paired", "single"),
                                   help = "\"paired\" is for paired-end RNA-Seq libraries and \"single\" is for single-end RNA-Seq libraries. DEFAULT: \"single\".",
                                   default = "single" )   
