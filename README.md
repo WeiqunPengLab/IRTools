@@ -66,7 +66,7 @@ Input annotation [GTF](http://mblab.wustl.edu/GTF22.html) File. GTF file for a s
 
 Output annotation GTF file.
 
-**--outdir**
+**--outdir OUTDIR**
 
 If specified, all output files will be written to that directory. DEFAULT: the current working directory.
 
@@ -134,7 +134,7 @@ IR annotation GTF file user-built by "IRTools
 Sample name, which will be used to generate output
                         file names. REQUIRED.
 
-**--outdir**
+**--outdir OUTDIR**
 
 If specified, all output files will be written to that directory. DEFAULT: the current working directory.
 
@@ -214,44 +214,36 @@ Arguments that are same as `IRTools quant`:
 
 **-q/--quant-type {IRI,IRC}**
 
-**-p/--read-type {paired,single}**
-
-**-s/--library-type {fr-unstranded,fr-firststrand,fr-secondstrand}**
-
-**-u/--map-file MAPFILE** (optional)
-
-**-e/--species {hg19,mm9,mm10}** (exclusive with -g)
-
-**-g/--annotation-file ANNOFILE** (exclusive with -e)
-
 **-n/--name NAME**
 
-**--outdir**
-
-**-f/--format {BAM,BED}** (specified when -q IRI)
-
-**-m/--min_overlap MINOVERLAP** (specified when -q IRC)
+**--outdir OUTDIR**
 
 <br>
 
 Additional arguments:
 
+**--indir INDIR**
+
+The directory containing the IR quantification result
+                        files to be analyzed. Default: the current working
+                        directory
+
 **-s1/--s1-files S1FILES**
 
-A comma-separated list of RNA-Seq alignment BAM files
-                        for sample 1.
-                        
+A comma-separated list of names for each replicate in
+                        sample 1. IR quantification result files referenced by
+                        each name must be followed by the
+                        ".quant.{IRI,IRC}.{introns,genes,junctions}.txt"
+                        extension.
+ 
 **-s2/--s2-files S1FILES**
 
-A comma-separated list of RNA-Seq alignment BAM files
-                        for sample 2.
-                        
-**-c/--cutoff CUTOFF**
-
-The cutoff of IR difference between sample 1 and
-                        sample 2. The cutoff is used in the null hypothesis
-                        test for differential IR. DEFAULT: 0.0001 difference.
-                        
+A comma-separated list of names for each replicate in
+                        sample 2. IR quantification result files referenced by
+                        each name must be followed by the
+                        ".quant.{IRI,IRC}.{introns,genes,junctions}.txt"
+                        extension.                       
+ 
 **-t/--analysis-type {P,U}**
 
 Type of analysis performed. "P" is for paired
