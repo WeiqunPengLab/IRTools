@@ -37,97 +37,6 @@ class IRI_diff(object):
                                              
                 return temp_dir                  
         
-        def run_IRI_quant_for_all_samples(self, args):
-                logging.info("Perform \"IRTools quant\" for all replciates from both samples")
-                self.logger.disabled = True
-                
-                filtered_CIR_id_list = []
-                
-                s1files_list = self.params['s1files'].split(',')
-                s2files_list = self.params['s2files'].split(',')                
-
-                IRI_intron_level_df_s1_list = []
-                IRI_intron_level_df_s2_list = []
-                
-                counts_s1_list = []
-                counts_s2_list = []
-                
-                total_read_count_s1_list = []
-                total_read_count_s2_list = []                
-                
-                IRI_quanter = IRI_quant(args)
-                IRI_quanter.params['outdir'] = self.temp_dir 
-                
-                for i, s1file in enumerate(s1files_list):
-                        IRI_quanter.params['name'] = self.params['name'] + "_S1_R%d" % (i+1)
-                        IRI_quanter.params['altfile'] = s1file
-                        
-                        IRI_quanter.quant()
-                        IRI_quanter.output_IRI_intron_level()
-                        IRI_intron_level_df_s1_list.append(IRI_quanter.IRI_intron_level_df)
-                        
-                        counts_s1_list.append(copy.deepcopy(IRI_quanter.counts))
-                        total_read_count_s1_list.append(IRI_quanter.total_read_count)
-                        filtered_CIR_id_list.extend(IRI_quanter.filtered_CIR_id_list)
-                                               
-                for i, s2file in enumerate(s2files_list):
-                        IRI_quanter.params['name'] = self.params['name'] + "_S2_R%d" % (i+1)
-                        IRI_quanter.params['altfile'] = s2file
-                        
-                        IRI_quanter.quant()
-                        IRI_quanter.output_IRI_intron_level()
-                        IRI_intron_level_df_s2_list.append(IRI_quanter.IRI_intron_level_df)
-                        
-                        counts_s2_list.append(copy.deepcopy(IRI_quanter.counts))
-                        total_read_count_s2_list.append(IRI_quanter.total_read_count)
-                        filtered_CIR_id_list.extend(IRI_quanter.filtered_CIR_id_list)
-                        
-                filtered_CIR_id_list = list(set(filtered_CIR_id_list))
-                
-                for i, IRI_intron_level_df in enumerate(IRI_intron_level_df_s1_list):
-                        IRI_intron_level_df_s1_list[i] = IRI_intron_level_df[IRI_intron_level_df.CIR_id.isin(filtered_CIR_id_list) == False]
-                
-                for i, IRI_intron_level_df in enumerate(IRI_intron_level_df_s2_list):
-                        IRI_intron_level_df_s2_list[i] = IRI_intron_level_df[IRI_intron_level_df.CIR_id.isin(filtered_CIR_id_list) == False]                     
-                        
-                self.IRI_intron_level_data = {'s1_data': IRI_intron_level_df_s1_list,
-                                              's2_data': IRI_intron_level_df_s2_list} 
-                
-                IRI_gene_level_df_s1_list = []
-                IRI_gene_level_df_s2_list = []                
-                
-                for i, s1file in enumerate(s1files_list):
-                        IRI_quanter.params['name'] = self.params['name'] + "_S1_R%d" % (i+1)
-                        
-                        IRI_quanter.counts = counts_s1_list[i]   
-                        IRI_quanter.total_read_count = total_read_count_s1_list[i]
-                        IRI_quanter.output_IRI_gene_level(filtered_CIR_id_list)
-                        IRI_gene_level_df_s1_list.append(IRI_quanter.IRI_gene_level_df)
-                
-                        self.logger.disabled = False
-                        logging.info("Sample: " + IRI_quanter.params['name'])                   
-                        IRI_quanter.output_IRI_genome_wide()
-                        self.logger.disabled = True
-                        
-                for i, s2file in enumerate(s2files_list):
-                        IRI_quanter.params['name'] = self.params['name'] + "_S2_R%d" % (i+1)
-                        
-                        IRI_quanter.counts = counts_s2_list[i]
-                        IRI_quanter.total_read_count = total_read_count_s2_list[i]
-                        IRI_quanter.output_IRI_gene_level(filtered_CIR_id_list)
-                        IRI_gene_level_df_s2_list.append(IRI_quanter.IRI_gene_level_df)
-                
-                        self.logger.disabled = False
-                        logging.info("Sample: " + IRI_quanter.params['name'])  
-                        sys.stdout.flush()
-                        IRI_quanter.output_IRI_genome_wide()  
-                        self.logger.disabled = True
-                        
-                self.IRI_gene_level_data = {'s1_data': IRI_gene_level_df_s1_list,
-                                            's2_data': IRI_gene_level_df_s2_list}
-                
-                self.logger.disabled = False
-        
         @staticmethod
         def count_distinct_vals(num_IRI_S1, num_IRI_S2):
                 distinct_vals = []
@@ -144,8 +53,8 @@ class IRI_diff(object):
 
                 temp_dict = {}
 
-                for i in range(len(self.params['s1files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRI.introns.txt" % (i + 1))
+                for i in self.params['s1files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRI.introns.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         if not temp_dict:
@@ -156,8 +65,8 @@ class IRI_diff(object):
                                         temp_dict[l.split()[0]][0].append(l.split()[8])
                         data.close()
 
-                for i in range(len(self.params['s2files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRI.introns.txt" % (i + 1))
+                for i in self.params['s2files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRI.introns.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
@@ -181,8 +90,8 @@ class IRI_diff(object):
 
                 temp_dict = {}
 
-                for i in range(len(self.params['s1files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRI.genes.txt" % (i + 1))
+                for i in self.params['s1files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRI.genes.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         if not temp_dict:
@@ -193,8 +102,8 @@ class IRI_diff(object):
                                         temp_dict[l.split()[0]][0].append(l.split()[8])
                         data.close()
 
-                for i in range(len(self.params['s2files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRI.genes.txt" % (i + 1))
+                for i in self.params['s2files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRI.genes.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
@@ -326,101 +235,6 @@ class IRC_diff(object):
                                              
                 return temp_dir  
         
-        def run_IRC_quant_for_all_samples(self, args):
-                logging.info("Perform \"IRTools quant\" for all replciates from both samples")
-                self.logger.disabled = True
-                
-                filtered_CIR_id_list = []
-                
-                s1files_list = self.params['s1files'].split(',')
-                s2files_list = self.params['s2files'].split(',')                
-
-                IRC_junction_level_df_s1_list = []
-                IRC_junction_level_df_s2_list = []
-                
-                IRC_intron_level_df_s1_list = []
-                IRC_intron_level_df_s2_list = []                
-                
-                CIR_counts_s1_list = []
-                CIR_counts_s2_list = []
-                
-                IRC_quanter = IRC_quant(args)
-                IRC_quanter.params['outdir'] = self.temp_dir 
-                
-                for i, s1file in enumerate(s1files_list):
-                        IRC_quanter.params['name'] = self.params['name'] + "_S1_R%d" % (i+1)
-                        IRC_quanter.params['altfile'] = s1file
-                        
-                        IRC_quanter.quant()
-                        IRC_quanter.output_IRC_junction_level()
-                        IRC_junction_level_df_s1_list.append(IRC_quanter.IRC_junction_level_df)
-                        
-                        IRC_quanter.output_IRC_intron_level()
-                        IRC_intron_level_df_s1_list.append(IRC_quanter.IRC_intron_level_df)
-                        
-                        CIR_counts_s1_list.append(copy.deepcopy(IRC_quanter.CIR_counts))
-                        filtered_CIR_id_list.extend(IRC_quanter.filtered_CIR_id_list)
-                                               
-                for i, s2file in enumerate(s2files_list):
-                        IRC_quanter.params['name'] = self.params['name'] + "_S2_R%d" % (i+1)
-                        IRC_quanter.params['altfile'] = s2file
-                        
-                        IRC_quanter.quant()
-                        IRC_quanter.output_IRC_junction_level()
-                        IRC_junction_level_df_s2_list.append(IRC_quanter.IRC_junction_level_df)
-                        
-                        IRC_quanter.output_IRC_intron_level()
-                        IRC_intron_level_df_s2_list.append(IRC_quanter.IRC_intron_level_df)
-                        
-                        CIR_counts_s2_list.append(copy.deepcopy(IRC_quanter.CIR_counts))
-                        filtered_CIR_id_list.extend(IRC_quanter.filtered_CIR_id_list)
-                        
-                filtered_CIR_id_list = list(set(filtered_CIR_id_list))
-                
-                for i, IRC_intron_level_df in enumerate(IRC_intron_level_df_s1_list):
-                        IRC_intron_level_df_s1_list[i] = IRC_intron_level_df[IRC_intron_level_df.CIR_id.isin(filtered_CIR_id_list) == False]
-                
-                for i, IRC_intron_level_df in enumerate(IRC_intron_level_df_s2_list):
-                        IRC_intron_level_df_s2_list[i] = IRC_intron_level_df[IRC_intron_level_df.CIR_id.isin(filtered_CIR_id_list) == False]                     
-                
-                self.IRC_junction_level_data = {'s1_data': IRC_junction_level_df_s1_list,
-                                                's2_data': IRC_junction_level_df_s2_list}  
-                
-                self.IRC_intron_level_data = {'s1_data': IRC_intron_level_df_s1_list,
-                                              's2_data': IRC_intron_level_df_s2_list} 
-                
-                IRC_gene_level_df_s1_list = []
-                IRC_gene_level_df_s2_list = []                
-                
-                for i, s1file in enumerate(s1files_list):
-                        IRC_quanter.params['name'] = self.params['name'] + "_S1_R%d" % (i+1)
-                        
-                        IRC_quanter.CIR_counts = CIR_counts_s1_list[i]
-                        IRC_quanter.output_IRC_gene_level(filtered_CIR_id_list)
-                        IRC_gene_level_df_s1_list.append(IRC_quanter.IRC_gene_level_df)
-                
-                        self.logger.disabled = False
-                        logging.info("Sample: " + IRC_quanter.params['name'])                   
-                        IRC_quanter.output_IRC_genome_wide()
-                        self.logger.disabled = True
-                        
-                for i, s2file in enumerate(s2files_list):
-                        IRC_quanter.params['name'] = self.params['name'] + "_S2_R%d" % (i+1)
-                        
-                        IRC_quanter.CIR_counts = CIR_counts_s2_list[i]
-                        IRC_quanter.output_IRC_gene_level(filtered_CIR_id_list)
-                        IRC_gene_level_df_s2_list.append(IRC_quanter.IRC_gene_level_df)
-                
-                        self.logger.disabled = False
-                        logging.info("Sample: " + IRC_quanter.params['name'])                   
-                        IRC_quanter.output_IRC_genome_wide()
-                        self.logger.disabled = True
-                        
-                self.IRC_gene_level_data = {'s1_data': IRC_gene_level_df_s1_list,
-                                            's2_data': IRC_gene_level_df_s2_list}
-                
-                self.logger.disabled = False
-
         @staticmethod
         def count_distinct_vals(num_IRC_S1, num_IRC_S2):
                 distinct_vals = []
@@ -437,8 +251,8 @@ class IRC_diff(object):
 
                 temp_dict = {}
 
-                for i in range(len(self.params['s1files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRC.introns.txt" % (i + 1))
+                for i in self.params['s1files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRC.introns.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         if not temp_dict:
@@ -449,8 +263,8 @@ class IRC_diff(object):
                                         temp_dict[l.split()[0]][0].append(l.split()[5])
                         data.close()
 
-                for i in range(len(self.params['s2files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRC.introns.txt" % (i + 1))
+                for i in self.params['s2files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRC.introns.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
@@ -474,8 +288,8 @@ class IRC_diff(object):
 
                 temp_dict = {}
 
-                for i in range(len(self.params['s1files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRC.genes.txt" % (i + 1))
+                for i in self.params['s1files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRC.genes.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         if not temp_dict:
@@ -486,8 +300,8 @@ class IRC_diff(object):
                                         temp_dict[l.split()[0]][0].append(l.split()[4])
                         data.close()
 
-                for i in range(len(self.params['s2files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRC.genes.txt" % (i + 1))
+                for i in self.params['s2files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRC.genes.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
@@ -511,8 +325,8 @@ class IRC_diff(object):
 
                 temp_dict = {}
 
-                for i in range(len(self.params['s1files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S1_R%d.quant.IRC.junctions.txt" % (i + 1))
+                for i in self.params['s1files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRC.junctions.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         if not temp_dict:
@@ -523,8 +337,8 @@ class IRC_diff(object):
                                         temp_dict[l.split()[0]][0].append(l.split()[5])
                         data.close()
 
-                for i in range(len(self.params['s2files'].split(','))):
-                        file_path = os.path.join(self.temp_dir, self.params['name'] + "_S2_R%d.quant.IRC.junctions.txt" % (i + 1))
+                for i in self.params['s2files'].split(','):
+                        file_path = os.path.join(self.params['indir'], i + ".quant.IRC.junctions.txt")
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
@@ -690,7 +504,6 @@ def run(args):
                 if IRI_differ.params['analysistype'] == "P" and IRI_differ.params['s1files'].count(',') != IRI_differ.params['s2files'].count(','):
                         logging.info("Run Aborted: Samples must have the same number of replicates for paired analysis. Please check input.")
                         exit()
-                IRI_differ.run_IRI_quant_for_all_samples(args)
                 IRI_differ.generate_input_intron_level()
                 IRI_differ.generate_input_gene_level()
                 IRI_differ.run_analysis_intron_level()
@@ -704,7 +517,6 @@ def run(args):
                 if IRC_differ.params['analysistype'] == "P" and IRC_differ.params['s1files'].count(',') != IRC_differ.params['s2files'].count(','):
                         logging.info("Run Aborted: Samples must have the same number of replicates for paired analysis. Please check input.")
                         exit()
-                IRC_differ.run_IRC_quant_for_all_samples(args)
                 IRI_differ.generate_input_intron_level()
                 IRI_differ.generate_input_gene_level()
                 IRI_differ.generate_input_junction_level()
