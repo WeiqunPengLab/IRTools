@@ -170,47 +170,22 @@ def add_diff_parser( subparsers ):
         # group for general arguments
         group_general = argparser_diff.add_argument_group( "general arguments" )
         group_general.add_argument( "-q", "--quant-type", dest = "quanttype", type = str, choices=("IRI", "IRC"),
-                                  help = "Intron retention (IR) quantifiation types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: \"IRI\".",
+                                  help = "Intron retention (IR) quantification input types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: \"IRI\".",
                                   default = "IRI")   
+        group_general.add_argument("--indir", dest = "indir", type = str, default = '',
+                                   help = "The directory containing the IR quantification result files to be analyzed. Default: the current working directory")
         group_general.add_argument( "-s1", "--s1-files", dest = "s1files", type = str,
-                                    help = "A comma-separated list of RNA-Seq alignment BAM files for sample 1." ) 
+                                    help = "A comma-separated list of names for each replicate in sample 1. IR quantification result files referenced by each name must be followed by the \".quant.{IRI,IRC}.{introns,genes,junctions}.txt\" extension." ) 
         group_general.add_argument( "-s2", "--s2-files", dest = "s2files", type = str,
-                                    help = "A comma-separated list of RNA-Seq alignment BAM files for sample 2." )
+                                    help = "A comma-separated list of names for each replicate in sample 2. IR quantification result files referenced by each name must be followed by the \".quant.{IRI,IRC}.{introns,genes,junctions}.txt\" extension." )
         group_general.add_argument( "-t", "--analysis-type", dest = "analysistype", type = str, choices = ("P", "U"),
                                   help = "Type of analysis performed. \"P\" is for paired replicates analysis and \"U\" is for unpaired replicates analysis. DEFAULT: \"U\".",
                                   default = "U" ) # Requires same sample size in each sample         
-        group_general.add_argument( "-p", "--read-type", dest = "readtype", type = str, choices = ("paired", "single"),
-                                  help = "\"paired\" is for paired-end RNA-Seq libraries and \"single\" is for single-end RNA-Seq libraries. DEFAULT: \"single\".",
-                                  default = "single" )   
-        group_general.add_argument( "-s", "--library-type", dest = "libtype", type = str, choices = ("fr-unstranded", "fr-firststrand", "fr-secondstrand"),
-                                  help = "Library type. DEFAULT: \"fr-unstranded\" (unstranded). Use \"fr-firststrand\" or \"fr-secondstrand\" for strand-specific RNA-Seq libraries.",
-                                  default = "fr-unstranded" ) 
-        group_general.add_argument( "-u", "--map-file", dest = "mapfile", type = str,
-                                  help = "Mappability score bigWig file (depends on species, sequence length of RNA-Seq library, etc). Or specify a species (i.e. hg19 or mm9) for which a default annotation file (default for 50 bps of single-end RNA-Seq library) can be downloaded and used" +
-                                         "If specified, mappability will take into account.")
 
-        e_or_g_group = group_general.add_mutually_exclusive_group()
-        e_or_g_group.add_argument( "-e", "--species", dest = "species", type = str, choices = ("hg19", "mm9"),
-                                   help = "Specify a species for which built-in IR annotation GTF file can be used. -e and -g are mutually exclusive." )
-        e_or_g_group.add_argument( "-g", "--annotation_file", dest = "annofile", type = str,
-                                   help = "IR annotation GTF file built by \"IRTools annotation\" command. -e and -g are mutually exclusive." )
-        
         group_general.add_argument( "-n", "--name", dest = "name", type = str, required = True,
                                     help = "Sample name, which will be used to generate output file names. REQUIRED.")  
         group_general.add_argument("--outdir", dest = "outdir", type = str, default = '',
                                    help = "If specified, all output files will be written to that directory. Default: the current working directory")          
-        
-        # group for IRI specific arguments
-        group_IRI = argparser_diff.add_argument_group( "IRI specific arguments" )        
-        group_IRI.add_argument( "-f", "--format", dest = "format", type = str, choices = ("BAM", "BED"),
-                                help = "Set when IR quantification type is \"IRI\". Specify input RNA-Seq alignment file format: \"BAM\", \"BED\". DEFAULT: \"BAM\".",
-                                default = "BAM" )            
-  
-        # group for IRC specific arguments
-        group_IRC = argparser_diff.add_argument_group( "IRC specific arguments" )
-        group_IRC.add_argument( "-m", "--min_overlap", dest = "minoverlap", type = int,
-                                help = "Set when IR quantification type is \"IRC\". Minimum lengh of overlap between the reads and each of the exons or introns involved in splicing. DEFAULT: 8.",
-                                default = 8 ) 
         
         return
 
