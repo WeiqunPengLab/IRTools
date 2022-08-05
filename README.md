@@ -306,7 +306,7 @@ The file format is as follows.
 
 ## Tutorial
 
-The following tutorial will take you through how to use IRTools and allow you to check that IRTools installation was successful.
+The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. We will be working with mm9 activated/resting B cell data. All data files can be in the [Tutorial](IRTools/Tutorial) directory./
 
 ### Create an annotation file
 
