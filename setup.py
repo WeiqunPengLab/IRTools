@@ -9,7 +9,7 @@ def main():
                 # sys.exit(1)
 
         setup(name="IRTools",
-              version="1.2.1.0",
+              version="1.2.1.1",
               description="a computational toolset for detection and analysis of intron retention from RNA-Seq libraries",
               author='Zhouhao Zeng, Andy Cao',
               author_email='zzhlbj23@gwmail.gwu.edu, acao3@email.gwu.edu',
@@ -35,6 +35,7 @@ def main():
                       'scipy',
                       'pandas',
                       'networkx',
+                      'bx-python',
                       'HTSeq==0.13.5',
                       'pysam==0.19.1'],
               )
