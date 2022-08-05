@@ -301,4 +301,4 @@ The file format is as follows.
 
 ## Tutorial
 
-
+The following tutorial will take you through how to use IRTools and allow you to check that IRTools installation was successful.
