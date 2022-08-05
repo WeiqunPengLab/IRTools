@@ -1,6 +1,8 @@
 # IRTools
 IRTools is a computational toolset for detection and analysis of intron retention from RNA-Seq libraries.
 
+[Installation](installation)
+
 ## Installation
 
 To use `IRTools`, you will need `python 3.6.9`.
@@ -304,3 +306,5 @@ The file format is as follows.
 The following tutorial will take you through how to use IRTools and allow you to check that IRTools installation was successful.
 
 ### Create an annotation file
+
+
