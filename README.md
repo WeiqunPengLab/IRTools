@@ -25,6 +25,7 @@ pip install numpy
 pip install scipy
 pip install pandas
 pip install networkx
+pip install bx-python
 pip install HTSeq==0.13.5
 pip install pysam==0.19.1
 ```
