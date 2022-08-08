@@ -311,4 +311,8 @@ The following tutorial will take you through how to use IRTools and allow you to
 
 ### Create an annotation file
 
-The first step in the IRTools pipeline is creating an annotation GTF file to be used for further intron retention analysis. We will be creating an annotation GTF file for the mm9 genome. In your command line, run the following:
+The first step in the IRTools pipeline is creating an annotation GTF file to be used for further intron retention analysis. We will be creating an annotation GTF file for the mm9 genome using `IRTools annotation`. In your command line, run the following:
+
+```
+IRTools annotation -g mm9_2015.gtf -o mm9_annotation.gtf 
+```
