@@ -119,7 +119,7 @@ Mappability score bigWig file (depends on species,
                         Seq library) can be downloaded and used. If specified,
                         mappability will take into account.
                         
-Note: to take into account mappability, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
+Note: To take into account mappability, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
                         
 **-e/--species {hg19,mm9}** (exclusive with -g)
 
@@ -307,11 +307,11 @@ The file format is as follows.
 
 ## Tutorial
 
-The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. You will be working with mm9 activated/resting B cell data. All data files can be found in the [Tutorial](Tutorial) directory. Note that all command line code in this tutorial is written with the assumption that the [Tutorial](Tutorial) directory is the user's current directory.
+The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. You will be working with mm9 activated/resting B cell data. All data files can be found in the [Tutorial](Tutorial) directory. Note that all command line code in this tutorial is written with the assumption that the Tutorial directory is the user's current directory.
 
 ### Create an annotation file
 
-The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. You will be creating an annotation file for the mm9 genome using `IRTools annotation`. The estimated runtime is 5 minutes.
+The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. Using `IRTools annotation`, create an annotation file for the mm9 genome. The estimated runtime is 5 minutes.
 
 ```
 IRTools annotation -g gtf/mm9_2015.gtf -o gtf/mm9_annotation.gtf 
@@ -324,3 +324,7 @@ diff gtf/mm9_annotation.gtf gtf/tutorial.gtf
 ```
 
 If there is no output after running the above command, then you have successfully created an annotation file for the mm9 genome.
+
+### Determine data parameters
+
+Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` with your data to determine these parameters. Note that, to run `infer_experiment.py`, you must download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0) and install: `python setup.py install`.
