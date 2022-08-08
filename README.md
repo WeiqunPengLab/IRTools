@@ -307,7 +307,7 @@ The file format is as follows.
 
 ## Tutorial
 
-The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. You will be working with mm9 activated/resting B cell data. All data files can be found in the [Tutorial](Tutorial) directory. Note that all command line code in this tutorial is written with the assumption that the Tutorial directory is the user's current directory.
+The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. You will be working with chromosome 19 of mm9 activated/resting B cell data. All data files can be found in the [Tutorial](Tutorial) directory. Note that all command line code in this tutorial is written with the assumption that the Tutorial directory is the user's current directory.
 
 ### Create an annotation file
 
@@ -334,3 +334,20 @@ Note: To run `infer_experiment.py`, download [RSeQC 4.0.0](IRTools/utility/RSeQC
 ```
 infer_experiment.py -r ../IRTools/utility/RSeQC-4.0.0/gene_model/mm9_UCSC_knownGene.bed -i bam/B0h_chr19_R1.bam
 ```
+
+After running `infer_experiment.py` on the resting B cell replicate 1 BAM file, you should get the following output.
+
+```
+This is PairEnd Data
+Fraction of reads failed to determine: 0.0001
+Fraction of reads explained by "1++,1--,2+-,2-+": 0.5003
+Fraction of reads explained by "1+-,1-+,2++,2--": 0.4996
+```
+
+Make sure to keep a record of this output as the information will be needed when running `IRTools quant`. 
+
+The first line of the output states whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. For the purpose of this tutorial, all BAM files have already been sorted by name. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
+
+The second line of the output 
+
+Now, try repeating the steps above with the other replicates and see what you get.
