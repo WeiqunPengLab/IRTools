@@ -173,7 +173,7 @@ def run(args):
                 gene_iv = gene_region[gene_id]
                 gene_iv = gene_region[gene_id]
                 for iv, step_set in exons[gene_id][gene_iv].steps():
-                        transcript_list = list(step_set)
+                        transcript_list = sorted(list(step_set))
                         if len(transcript_list) != 0:
                                 feature = HTSeq.GenomicFeature(gene_id, "exonic_region", iv)
                                 feature.source = "IR_annotation"
@@ -198,7 +198,7 @@ def run(args):
         for gene_id in list(gene_region.keys()):
                 gene_iv = gene_region[gene_id]
                 for iv, step_set in introns[gene_id][gene_iv].steps():
-                        transcript_list = list(step_set)
+                        transcript_list = sorted(list(step_set))
                         if len(transcript_list) != 0:
                                 feature = HTSeq.GenomicFeature(gene_id, "intronic_region", iv)
                                 feature.source = "IR_annotation"
