@@ -346,8 +346,8 @@ Fraction of reads explained by "1+-,1-+,2++,2--": 0.4996
 
 Make sure to keep a record of this output as the information will be needed when running `IRTools quant`. 
 
-The first line of the output states whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. For the purpose of this tutorial, all BAM files have already been sorted by name. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
+The first line of the output gives whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. For the purpose of this tutorial, all BAM files have already been sorted by name. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
 
-The second line of the output 
+The second line of the output gives the fraction of total mapped reads that could not be 
 
 Now, try repeating the steps above with the other replicates and see what you get.
