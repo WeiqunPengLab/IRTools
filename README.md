@@ -307,12 +307,20 @@ The file format is as follows.
 
 ## Tutorial
 
-The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. We will be working with mm9 activated/resting B cell data. All data files can be found in the [Tutorial](Tutorial) directory. Note that all command line code in this tutorial is written with the assumption that the [Tutorial](Tutorial) directory is the user's current directory.
+The following tutorial will take you through how to use IRTools and allow you to check that the installation was successful. You will be working with mm9 activated/resting B cell data. All data files can be found in the [Tutorial](Tutorial) directory. Note that all command line code in this tutorial is written with the assumption that the [Tutorial](Tutorial) directory is the user's current directory.
 
 ### Create an annotation file
 
-The first step in the IRTools pipeline is creating an annotation GTF file to be used for further intron retention analysis. We will be creating an annotation GTF file for the mm9 genome using `IRTools annotation`. In your command line, run the following:
+The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. You will be creating an annotation file for the mm9 genome using `IRTools annotation`. The estimated runtime is 5 minutes.
 
 ```
-IRTools annotation -g mm9_2015.gtf -o mm9_annotation.gtf 
+IRTools annotation -g gtf/mm9_2015.gtf -o gtf/mm9_annotation.gtf 
 ```
+
+Next, check that the output is correct by comparing the annotation file you just created to the provided annotation file for the mm9 genome.
+
+```
+diff gtf/mm9_annotation.gtf gtf/tutorial.gtf
+```
+
+If there is no output after running the above command, then you have successfully created an annotation file for the mm9 genome.
