@@ -114,14 +114,14 @@ Library type. DEFAULT: "fr-unstranded" (unstranded). Use "fr-firststrand" or "fr
 
 Mappability score bigWig file (depends on species,
                         sequence length of RNA-Seq library, etc.). Or specify a
-                        species (i.e. hg19, mm9, or mm10) for which a default
+                        species (i.e. hg19 or mm9) for which a default
                         annotation file (default for 50 bps of single end RNA-
                         Seq library) can be downloaded and used. If specified,
                         mappability will take into account.
                         
 Note: to take into account mappability, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
                         
-**-e/--species {hg19,mm9,mm10}** (exclusive with -g)
+**-e/--species {hg19,mm9}** (exclusive with -g)
 
 Specify a species for which integrated IR annotation
                         GTF file can be used.                    
