@@ -132,11 +132,11 @@ def add_quant_parser( subparsers ):
                                   help = "Library type. DEFAULT: \"fr-unstranded\" (unstranded). Use \"fr-firststrand\" or \"fr-secondstrand\" for strand-specific RNA-Seq libraries.",
                                   default = "fr-unstranded" )
         group_general.add_argument( "-u", "--map-file", dest = "mapfile", type = str,
-                                  help = "Mappability score bigWig file (depends on species, sequence length of RNA-Seq library, etc). Or specify a species (i.e. hg19, mm9, or mm10) for which a default annotation file (default for 50 bps of single-end RNA-Seq library) can be downloaded and used." +
+                                  help = "Mappability score bigWig file (depends on species, sequence length of RNA-Seq library, etc). Or specify a species (i.e. hg19 or mm9) for which a default annotation file (default for 50 bps of single-end RNA-Seq library) can be downloaded and used." +
                                          "If specified, mappability will take into account.")            
 
         e_or_g_group = group_general.add_mutually_exclusive_group(required=True)
-        e_or_g_group.add_argument( "-e", "--species", dest = "species", type = str, choices = ("hg19", "mm9", "mm10"),
+        e_or_g_group.add_argument( "-e", "--species", dest = "species", type = str, choices = ("hg19", "mm9"),
                                    help = "Specify a species for which built-in IR annotation GTF file can be used. -e and -g are mutually exclusive and one is required." )
         e_or_g_group.add_argument( "-g", "--annotation-file", dest = "annofile", type = str,
                                    help = "IR annotation GTF file built by \"IRTools annotation\" command. -e and -g are mutually exclusive and one is required." )
