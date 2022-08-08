@@ -327,4 +327,6 @@ If there is no output after running the above command, then you have successfull
 
 ### Determine data parameters
 
-Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` with your data to determine these parameters. Note that, to run `infer_experiment.py`, you must download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0) and install: `python setup.py install`.
+Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` with your data to determine these parameters. 
+
+Note: To run `infer_experiment.py`, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
