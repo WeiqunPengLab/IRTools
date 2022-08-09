@@ -106,9 +106,13 @@ Input RNA-Seq alignment file. If IR quantification type is "IRI", the input file
 
 "paired" is for paired-end data and "single" is for single-end data. DEFAULT: "single".
 
+Note: See [Tutorial](#tutorial) for more information.
+
 **-s/--library-type {fr-unstranded,fr-firststrand,fr-secondstrand}**
 
 Library type. DEFAULT: "fr-unstranded" (unstranded). Use "fr-firststrand" or "fr-secondstrand" for strand-specific data.
+
+Note: See [Tutorial](#tutorial) for more information.
 
 **-u/--map-file MAPFILE** (optional)
 
@@ -327,7 +331,7 @@ If there is no output after running the above command, then you have successfull
 
 ### Determine data parameters
 
-Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` to determine these parameters. Try this on the B cell replicate 1 data located in the [bam](Tutorial/bam) directory.
+Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` to determine these parameters. Try this the B cell replicate 1 data located in the [bam](Tutorial/bam) directory.
 
 Note: To run `infer_experiment.py`, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
 
@@ -353,3 +357,9 @@ The second line of the output gives the fraction of total mapped reads where the
 The third and fourth lines give the fraction of mapped reads that can be attributed to a certain strand. In this example, half can be explained by "1++,1--,2+-,2-+" and half can be explained by "1+-,1-+,2++,2--". This indicates that the data is unstranded. If the large majority of reads were to be explained by "1++,1--,2+-,2-+", this would indicate that the data is strand specific to the second strand. If the large majority of reads were to be explained by "1+-,1-+,2++,2--", this would indicate that the data is strand specific to the first strand. The interpretation of the output is that same for single-end data except that rather than the mapped reads being explained by "1++,1--,2+-,2-+" and "1+-,1-+,2++,2--" they are explained by "++,--" and "+-,-+", respectively.
 
 Now, try repeating the steps above with the other replicates and see what you get.
+
+### Quantify intron retention
+
+`IRTools quant` allows users to detect and quantify intron retention events in RNA-Seq data. The intron retention events can either be quantified as an intron retention index (IRI) or intron retention coefficient (IRC). The IRI of a constitutive intronic region (CIR) is defined as the ratio of its read density to the read density of its adjacent constitutive exonic regions (CERs) and the IRI of a gene is defined as the ratio of the overall read density of CIRs in that gene to the overall read density of CERs. The IRC of a CIR is defined as the fraction of junction reads that are exon-intron junctions (average of 5' exon-intron junction reads and 3' exon-intron junction reads) and the IRC of a gene is defined as the fraction of junction reads altogether in this gene that are exon-intron junctions. Additionally, IRC also quantifies constitutive junctions for which the IRC is defined as the fraction of junction reads that are exon-intron junctions. With the parameters obtained in the previous step, run `IRTools quant` in IRI mode on the B cell replicate 1 data.
+
+
