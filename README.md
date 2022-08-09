@@ -311,29 +311,29 @@ The file format is as follows.
 
 ## Tutorial
 
-The following tutorial will demonstrate how to use `IRTools`. We will be working with mm9 activated/resting B cell data. Due to constraints with file sizes, we do not provide the data for users to run the following commands on their own.
+The following tutorial will demonstrate how to use IRTools. We will be working with mm9 activated/resting B cell data. Due to constraints with file sizes, we do not provide the data for users to run the following commands on their own.
 
 ### Create an annotation file
 
-The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. Using `IRTools annotation`, we can create an annotation file for the mm9 genome.
+The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. The following is an example of using `IRTools annotation` to create the annotation file for the mm9 genome.
 
 ```
 IRTools annotation -g gtf/mm9_2015.gtf -o gtf/mm9_annotation.gtf 
 ```
 
-Pre-prepared annotation files for hg19 and mm9 can be found in the [gene_model](IRTools/utility/RSeQC-4.0.0/gene_model) directory.
+Pre-prepared annotation files for hg19 and mm9 can be found in the [data](IRTools/data) directory.
 
 ### Determine data parameters
 
-Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` to determine these parameters. Try this the B cell replicate 1 data located in the [bam](Tutorial/bam) directory.
+Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` to determine these parameters. The following is an example of running `infer_experiment.py` on replicate 1 of resting B cell data.
 
 Note: To run `infer_experiment.py`, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
 
 ```
-infer_experiment.py -r ../IRTools/utility/RSeQC-4.0.0/gene_model/mm9_UCSC_knownGene.bed -i bam/B0h_chr19_R1.bam
+infer_experiment.py -r ../IRTools/utility/RSeQC-4.0.0/gene_model/mm9_UCSC_knownGene.bed -i bam/B_0h_R1.bam
 ```
 
-When the run is finished, you should get the following output.
+When the run is finished, we get the following output.
 
 ```
 This is PairEnd Data
@@ -342,18 +342,21 @@ Fraction of reads explained by "1++,1--,2+-,2-+": 0.5003
 Fraction of reads explained by "1+-,1-+,2++,2--": 0.4996
 ```
 
-Make sure to keep a record of this output as the information will be needed when running `IRTools quant`. 
+It is important to keep a record of this output as the information will be needed when running `IRTools quant`. 
 
-The first line of the output gives whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. For the purpose of this tutorial, all BAM files have already been sorted by name. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
+The first line of the output gives whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
 
 The second line of the output gives the fraction of total mapped reads where the strand specificity could not be determined. This number should be relatively low otherwise it could indicate that the data's quality is not great. 
 
 The third and fourth lines give the fraction of mapped reads that can be attributed to a certain strand. In this example, half can be explained by "1++,1--,2+-,2-+" and half can be explained by "1+-,1-+,2++,2--". This indicates that the data is unstranded. If the large majority of reads were to be explained by "1++,1--,2+-,2-+", this would indicate that the data is strand specific to the second strand. If the large majority of reads were to be explained by "1+-,1-+,2++,2--", this would indicate that the data is strand specific to the first strand. The interpretation of the output is that same for single-end data except that rather than the mapped reads being explained by "1++,1--,2+-,2-+" and "1+-,1-+,2++,2--" they are explained by "++,--" and "+-,-+", respectively.
 
-Now, try repeating the steps above with the other replicates and see what you get.
+The steps above should be repeated with all replicates.
 
 ### Quantify intron retention
 
-`IRTools quant` allows users to detect and quantify intron retention events in RNA-Seq data. The intron retention events can either be quantified as an intron retention index (IRI) or intron retention coefficient (IRC). The IRI of a constitutive intronic region (CIR) is defined as the ratio of its read density to the read density of its adjacent constitutive exonic regions (CERs) and the IRI of a gene is defined as the ratio of the overall read density of CIRs in that gene to the overall read density of CERs. The IRC of a CIR is defined as the fraction of junction reads that are exon-intron junctions (average of 5' exon-intron junction reads and 3' exon-intron junction reads) and the IRC of a gene is defined as the fraction of junction reads altogether in this gene that are exon-intron junctions. Additionally, IRC also quantifies constitutive junctions for which the IRC is defined as the fraction of junction reads that are exon-intron junctions. With the parameters obtained in the previous step, run `IRTools quant` in IRI mode on the B cell replicate 1 data. The estimated runtime is
+`IRTools quant` allows users to detect and quantify intron retention events in RNA-Seq data. The intron retention events can either be quantified as an intron retention index (IRI) or intron retention coefficient (IRC). The IRI of a constitutive intronic region (CIR) is defined as the ratio of its read density to the read density of its adjacent constitutive exonic regions (CERs) and the IRI of a gene is defined as the ratio of the overall read density of CIRs in that gene to the overall read density of CERs. The IRC of a CIR is defined as the fraction of junction reads that are exon-intron junctions (average of 5' exon-intron junction reads and 3' exon-intron junction reads) and the IRC of a gene is defined as the fraction of junction reads altogether in this gene that are exon-intron junctions. Additionally, IRC also quantifies constitutive junctions for which the IRC is defined as the fraction of junction reads that are exon-intron junctions. The following is an example of running `IRTools quant` in IRI mode with the parameters obtained above.
 
+```
+IRTools quant -q IRI -i bam/B_0h_R1.bam -p paired -s fr-unstranded -e mm9 -f BAM -n B_0h_R1 --outdir quant
+```
 
