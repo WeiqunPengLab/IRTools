@@ -380,7 +380,7 @@ gene_id gene_iv gene_CIR_length gene_CER_length gene_CIR_read_count     gene_CER
 
 ### Analyze differential intron retention
 
-The final step of the IRTools pipeline is analyzing differential intron retention across samples using `IRTools diff`. The following is an example running `IRTools diff` on resting and activated B cell data with three replicates each.
+The final step of the IRTools pipeline is analyzing differential intron retention across samples using `IRTools diff`. The following is an example of running `IRTools diff` on resting and activated B cell data with three replicates each.
 
 ```
 IRTools diff -q IRI --indir quant -s1 B_0h_R1,B_0h_R2,B_0h_R3 -s2 B_24h_R1,B_24h_R2,B_24h_R3 -n B_rest_active
