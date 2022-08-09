@@ -62,7 +62,10 @@ class IRI_diff(object):
                                         temp_dict[l.split()[0]] = ([l.split()[8]], [])
                         else:
                                 for l in lines:
-                                        temp_dict[l.split()[0]][0].append(l.split()[8])
+                                        if l.split()[0] not in temp_dict.keys():
+                                                temp_dict[l.split()[0]] = ([l.split()[8]], [])
+                                        else:
+                                                temp_dict[l.split()[0]][0].append(l.split()[8])    
                         data.close()
 
                 for i in self.params['s2files'].split(','):
@@ -70,7 +73,10 @@ class IRI_diff(object):
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
-                                temp_dict[l.split()[0]][1].append(l.split()[8])
+                                if l.split()[0] not in temp_dict.keys():
+                                        temp_dict[l.split()[0]] = ([], [l.split()[8]])
+                                else:
+                                        temp_dict[l.split()[0]][1].append(l.split()[8])    
                         data.close()
 
                 del temp_dict["CIR_id"]
@@ -97,9 +103,12 @@ class IRI_diff(object):
                         if not temp_dict:
                                 for l in lines:
                                         temp_dict[l.split()[0]] = ([l.split()[8]], [])
-                        else:
+                        else:                                
                                 for l in lines:
-                                        temp_dict[l.split()[0]][0].append(l.split()[8])
+                                        if l.split()[0] not in temp_dict.keys():
+                                                temp_dict[l.split()[0]] = ([l.split()[8]], [])
+                                        else:
+                                                temp_dict[l.split()[0]][0].append(l.split()[8])
                         data.close()
 
                 for i in self.params['s2files'].split(','):
@@ -107,7 +116,10 @@ class IRI_diff(object):
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
-                                temp_dict[l.split()[0]][1].append(l.split()[8])
+                                if l.split()[0] not in temp_dict.keys():
+                                        temp_dict[l.split()[0]] = ([], [l.split()[8]])
+                                else:
+                                        temp_dict[l.split()[0]][1].append(l.split()[8])
                         data.close()
 
                 del temp_dict["gene_id"]
@@ -260,7 +272,10 @@ class IRC_diff(object):
                                         temp_dict[l.split()[0]] = ([l.split()[5]], [])
                         else:
                                 for l in lines:
-                                        temp_dict[l.split()[0]][0].append(l.split()[5])
+                                        if l.split()[0] not in temp_dict.keys():
+                                                temp_dict[l.split()[0]] = ([l.split()[5]], [])
+                                        else:
+                                                temp_dict[l.split()[0]][0].append(l.split()[5])    
                         data.close()
 
                 for i in self.params['s2files'].split(','):
@@ -268,7 +283,10 @@ class IRC_diff(object):
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
-                                temp_dict[l.split()[0]][1].append(l.split()[5])
+                                if l.split()[0] not in temp_dict.keys():
+                                        temp_dict[l.split()[0]] = ([], [l.split()[5]])
+                                else:
+                                        temp_dict[l.split()[0]][1].append(l.split()[5])    
                         data.close()
 
                 del temp_dict["CIR_id"]
@@ -297,7 +315,10 @@ class IRC_diff(object):
                                         temp_dict[l.split()[0]] = ([l.split()[4]], [])
                         else:
                                 for l in lines:
-                                        temp_dict[l.split()[0]][0].append(l.split()[4])
+                                        if l.split()[0] not in temp_dict.keys():
+                                                temp_dict[l.split()[0]] = ([l.split()[4]], [])
+                                        else:
+                                                temp_dict[l.split()[0]][0].append(l.split()[4])    
                         data.close()
 
                 for i in self.params['s2files'].split(','):
@@ -305,7 +326,10 @@ class IRC_diff(object):
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
-                                temp_dict[l.split()[0]][1].append(l.split()[4])
+                                if l.split()[0] not in temp_dict.keys():
+                                        temp_dict[l.split()[0]] = ([], [l.split()[4]])
+                                else:
+                                        temp_dict[l.split()[0]][1].append(l.split()[4])    
                         data.close()
 
                 del temp_dict["gene_id"]
@@ -334,7 +358,10 @@ class IRC_diff(object):
                                         temp_dict[l.split()[0]] = ([l.split()[5]], [])
                         else:
                                 for l in lines:
-                                        temp_dict[l.split()[0]][0].append(l.split()[5])
+                                        if l.split()[0] not in temp_dict.keys():
+                                                temp_dict[l.split()[0]] = ([l.split()[5]], [])
+                                        else:
+                                                temp_dict[l.split()[0]][0].append(l.split()[5])    
                         data.close()
 
                 for i in self.params['s2files'].split(','):
@@ -342,7 +369,10 @@ class IRC_diff(object):
                         data = open(file_path, "r")
                         lines = [x.strip("\n") for x in data if x != "\n"]
                         for l in lines:
-                                temp_dict[l.split()[0]][1].append(l.split()[5])
+                                if l.split()[0] not in temp_dict.keys():
+                                        temp_dict[l.split()[0]] = ([], [l.split()[5]])
+                                else:
+                                        temp_dict[l.split()[0]][1].append(l.split()[5])
                         data.close()
 
                 del temp_dict["CJ_id"]
