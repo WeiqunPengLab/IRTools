@@ -348,6 +348,8 @@ Make sure to keep a record of this output as the information will be needed when
 
 The first line of the output gives whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. For the purpose of this tutorial, all BAM files have already been sorted by name. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
 
-The second line of the output gives the fraction of total mapped reads that could not be 
+The second line of the output gives the fraction of total mapped reads where the strand specificity could not be determined. This number should be relatively low otherwise it could indicate that the data's quality is not great. 
+
+The third and fourth lines give the fraction of mapped reads that can be attributed to a certain strand. In this example, half can be explained by "1++,1--,2+-,2-+" and half can be explained by "1+-,1-+,2++,2--". This indicates that the data is unstranded. If the large majority of reads were to be explained by "1++,1--,2+-,2-+", this would indicate that the data is strand specific to the second strand. If the large majority of reads were to be explained by "1+-,1-+,2++,2--", this would indicate that the data is strand specific to the first strand. The interpretation of the output is that same for single-end data except that rather than the mapped reads being explained by "1++,1--,2+-,2-+" and "1+-,1-+,2++,2--" they are explained by "++,--" and "+-,-+", respectively.
 
 Now, try repeating the steps above with the other replicates and see what you get.
