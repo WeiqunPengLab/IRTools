@@ -321,7 +321,7 @@ The first step in the IRTools pipeline is creating an annotation file to be used
 IRTools annotation -g gtf/mm9_2015.gtf -o gtf/mm9_annotation.gtf 
 ```
 
-Pre-prepared annotation files for hg19 and mm9 can be found in the [genome
+Pre-prepared annotation files for hg19 and mm9 can be found in the [gene_model](IRTools/utility/RSeQC-4.0.0/gene_model) directory.
 
 ### Determine data parameters
 
