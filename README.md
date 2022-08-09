@@ -360,3 +360,22 @@ The steps above should be repeated with all replicates.
 IRTools quant -q IRI -i bam/B_0h_R1.bam -p paired -s fr-unstranded -e mm9 -f BAM -n B_0h_R1 --outdir quant
 ```
 
+Shown below are the first few lines of the output CIR IRI file and output gene IRI file, respectively.
+
+```
+CIR_id  CIR_iv  CIR_length      adjacent_CER_length     CIR_read_count  adjacent_CER_read_count CIR_RPKM        adjacent_CER_RPKM       intron_IRI
+0610005C13Rik:001       chr7:52830147-52830496  349     220     0.0     0.9519439748852935      0.0     0.1353347974887704      0.0
+0610005C13Rik:002       chr7:52829892-52829977  85      280     0.0     2.155574337921597       0.0     0.24078295617790033     0.0
+0610005C13Rik:003       chr7:52826562-52829782  3093    110     0.0     1.2036303630363037      0.0     0.3422324752934783      0.0
+0610005C13Rik:004       chr7:52823749-52826355  2467    585     0.0     0.0     0.0     0.0     NA
+```
+
+```
+gene_id gene_iv gene_CIR_length gene_CER_length gene_CIR_read_count     gene_CER_read_count     gene_CIR_RPKM   gene_CER_RPKM   gene_IRI
+0610005C13Rik   chr7:52823164-52830546  5994    915     0.0     2.155574337921597       0.0     0.0736822160981553      0.0
+0610007P14Rik   chr12:87156404-87165495 7690    1185    143.0433093553559       748.9566906446437       0.581784274398963       19.76783572161043       0.02943085336160243
+0610009B22Rik   chr11:51498886-51502136 2453    795     33.161477559187205      101.8385224408128       0.42282153013403        4.006505375049167       0.10553374838011824
+0610009L18Rik   chr11:120209991-120212504       1894    619     31.046335986936107      23.953664013063893      0.5126856329027132      1.2103251933843449      0.4235932918731762
+```
+
+
