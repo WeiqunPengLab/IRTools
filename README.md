@@ -78,7 +78,7 @@ If specified, all output files will be written to that directory. DEFAULT: the c
 
 #### `Outputs`
 
-`ANNOFILE` is the output GTF file that contains information for intron retention analysis, including the genomic coordinates of introns, exon-intron junctions, etc.
+`ANNOFILE` is the output GTF file that contains information for intron retention analysis, including the genomic coordinates of constitutive intronic regions (CIRs), constitutive exonic regions (CERs), constitutive exon-intron junctions (CJs), etc.
 
 Sample lines are as follows.
 
