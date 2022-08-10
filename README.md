@@ -173,7 +173,7 @@ The file format is as follows.
 | A1BG | chr19:58858171-58864865 | 4071 | 1766 | 80.13888888888889 | 93.86111111111111 | 0.7394798014780853 | 1.9965449549590883 | 0.37037974008115343 |
 | A1CF | chr10:52559168-52645435 | 72712 | 9221 | 24.0 | 59.0 | 0.012399074027101793 | 0.2403577285944172 | 0.051585917788498296 |
 
-2\. `NAME.quant.IRI.introns.txt` is the quantification of intron retention index for all introns from RNA-Seq library SAMPLELIB.
+2\. `NAME.quant.IRI.introns.txt` is the quantification of intron retention index for all CIRs from RNA-Seq library SAMPLELIB.
 
 The file format is as follows.
 
@@ -195,7 +195,7 @@ The file format is as follows.
 | AAAS | chr12:53701239-53715412 | 2.5 | 64 | 0.0375939849624 |
 | AAGAB | chr15:67493012-67547536 | 0.5 | 29 | 0.0169491525424 |
 
-2\. `NAME.quant.IRC.introns.txt` is the quantification of intron retention coefficient for all introns from RNA-Seq library SAMPLELIB.
+2\. `NAME.quant.IRC.introns.txt` is the quantification of intron retention coefficient for all CIRs from RNA-Seq library SAMPLELIB.
 
 The file format is as follows.
 
@@ -204,7 +204,7 @@ The file format is as follows.
 | AAAS:012 | chr12:53702133-53702218 | 1 | 0 | 4 | 0.111111111111 |
 | AAGAB:007 | chr15:67496486-67500899 | 0 | 1 | 5 | 0.0909090909091 |
 
-3\. `NAME.quant.IRC.junctions.txt` is the quantification of intron retention coefficient for all exon-intron junctions from RNA-Seq library SAMPLELIB.
+3\. `NAME.quant.IRC.junctions.txt` is the quantification of intron retention coefficient for all CJs from RNA-Seq library SAMPLELIB.
 
 The file format is as follows.
 
