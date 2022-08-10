@@ -319,6 +319,35 @@ class IRI_quant(object):
                                                 gene_id, feature_type, region_number = list(step_set)[0]
                                                 self.counts[gene_id][feature_type][region_number] += self.get_effective_length(iv, self.gene_map_score) * 1.0 / alt_read_length 
                                         
+        def is_overlapped_read_in_one_gene_CER_region(self,alt_iv_seq):
+                GeneInCER = []
+                for alt_iv in alt_iv_seq:
+                        for iv, step_set in self.genes[alt_iv].steps():
+                                # index 0---> gene id
+                                # index 1 ---> featuretype
+                                # extract the gene where the constitutive_exonic_region mapped
+                                GeneInCER.extend( [item[0] for item in step_set if item[1] == "constitutive_exonic_region"]	)
+                if len(set(GeneInCER)) != 0:
+                        OneGene = list(set(GeneInCER))[0]
+                else:
+                        OneGene = ""
+                return (len(set(GeneInCER)) == 1), OneGene
+
+        def assign_read_to_CER_region(self, alt_iv_seq,OneGene):    
+                alt_read_length = self.get_effective_length(alt_iv_seq, self.gene_map_score)
+                if alt_read_length > 0:
+                        for alt_iv in alt_iv_seq:
+                                for iv, step_set in self.genes[alt_iv].steps():
+                                        if step_set:
+                                                # print(list(step_set))
+                                                # gene_id, feature_type, region_number = list(step_set)[0] # not correct !!
+                                                OverlapGenes = list(step_set)
+                                                ExtractGene = [g for g in OverlapGenes if g[0] == OneGene]
+                                                if ExtractGene: # only if the extracted gene is the same as OneGene, or it will be empty!!!
+                                                        gene_id, feature_type, region_number = ExtractGene[0]
+                                                        if feature_type == "constitutive_exonic_region":
+                                                                self.counts[gene_id][feature_type][region_number] += self.get_effective_length(iv, self.gene_map_score) * 1.0 / alt_read_length 
+
         def assign_read_to_bin_filter(self, alt_iv_seq):
                 alt_read_length = self.get_effective_length(alt_iv_seq, self.gene_map_score)
                 if alt_read_length > 0:
@@ -348,50 +377,43 @@ class IRI_quant(object):
                 logging.info("Counting number of reads that map to each individual constitutive intronic region (CIR) and constitutive exonic region (CER)")
                   
                 # Input is bam file
-                if self.params['format'] == "BAM":
-                        bamfile = HTSeq.BAM_Reader(self.params['altfile'])
-                        # Single end
-                        if self.params['readtype'] == "single":
-                                for alt in bamfile:
-                                        # Consider the alignments that are aligned and uniquely mapped.
-                                        if alt.aligned and self.unique_aligned(alt) and re.match('chr', alt.iv.chrom):
-                                                self.total_read_count += 1                                               
-                                                alt_iv_seq = self.get_alt_iv(alt)
-                                                                        
-                                                # Eligible alignments are those mapped into one gene's either constitutive exonic region (CER) or constitutive intronic region (CIR).
-                                                # For each eligible alignment, we count by fraction of length. i.e. If an alt has 50 bps, 30 bps in CER "001", 20 bps in CIR "001". Then, count in CER "001" is 0.6,
-                                                # and count in CIR "001" is 0.4. (IRI is considered in intron level, so count is distributed in intron level)                                                
-                                                if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):    
-                                                        self.assign_read_to_region(alt_iv_seq)                                   
-                                                        if self.bin_filter:
-                                                                self.assign_read_to_bin_filter(alt_iv_seq)
+                bamfile = HTSeq.BAM_Reader(self.params['altfile'])
+                # Single end
+                if self.params['readtype'] == "single":
+                        for alt in bamfile:
+                                # Consider the alignments that are aligned and uniquely mapped.
+                                if alt.aligned and self.unique_aligned(alt): # and re.match('chr', alt.iv.chrom):
+                                        self.total_read_count += 1                                               
+                                        alt_iv_seq = self.get_alt_iv(alt)
                                                                 
-                        elif self.params['readtype'] == "paired":
-                                for alt_first, alt_second in HTSeq.pair_SAM_alignments(bamfile):
-                                        if alt_first == None or alt_second == None:
-                                                continue
-                                        if alt_first.aligned and self.unique_aligned(alt_first) and alt_second.aligned and self.unique_aligned(alt_second) and alt_first.iv.chrom == alt_second.iv.chrom and re.match('chr', alt_first.iv.chrom) and re.match('chr', alt_second.iv.chrom):
-                                                self.total_read_count += 1   
-                                                alt_first_iv_seq, alt_second_iv_seq = self.get_pair_alt_iv(alt_first, alt_second)
-                                                alt_iv_seq = self.combine_pair_iv_seq(alt_first_iv_seq, alt_second_iv_seq)
-                                                
-                                                if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):    
-                                                        self.assign_read_to_region(alt_iv_seq)                                   
-                                                        if self.bin_filter:
-                                                                self.assign_read_to_bin_filter(alt_iv_seq)    
-                                                                
-                elif self.params['format'] == "BED":
-                        # If pair end, input bed files probably consist of "+" strand bed file and "-" strand bed file. The input format is: p_bedfile,m_bedfile
-                        inputfile_list = self.params['altfile'].split(",")
-                        for inputfile in inputfile_list:
-                                bedfile = HTSeq.BED_Reader(inputfile)
-                                for alt in bedfile:
-                                        self.total_read_count += 1
-                                        
-                                        if self.is_read_in_gene_region([alt.iv]) and self.is_read_in_CIR_or_CER([alt.iv]):    
-                                                self.assign_read_to_region([alt.iv])                                   
+                                        # Eligible alignments are those mapped into one gene's either constitutive exonic region (CER) or constitutive intronic region (CIR).
+                                        # For each eligible alignment, we count by fraction of length. i.e. If an alt has 50 bps, 30 bps in CER "001", 20 bps in CIR "001". Then, count in CER "001" is 0.6,
+                                        # and count in CIR "001" is 0.4. (IRI is considered in intron level, so count is distributed in intron level)                                                
+                                        if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):    
+                                                self.assign_read_to_region(alt_iv_seq)                                   
                                                 if self.bin_filter:
-                                                        self.assign_read_to_bin_filter([alt.iv])                                                   
+                                                        self.assign_read_to_bin_filter(alt_iv_seq)
+                                        elif self.is_overlapped_read_in_one_gene_CER_region(alt_iv_seq)[0]:
+                                                OneGene = self.is_overlapped_read_in_one_gene_CER_region(alt_iv_seq)[1]
+                                                self.assign_read_to_CER_region(alt_iv_seq,OneGene)
+                
+                elif self.params['readtype'] == "paired":
+                        for alt_first, alt_second in HTSeq.pair_SAM_alignments(bamfile):
+                                if alt_first == None or alt_second == None:
+                                        continue
+                                if alt_first.aligned and self.unique_aligned(alt_first) and alt_second.aligned and self.unique_aligned(alt_second) and alt_first.iv.chrom == alt_second.iv.chrom: # and re.match('chr', alt_first.iv.chrom) and re.match('chr', alt_second.iv.chrom):
+                                        self.total_read_count += 1   
+                                        alt_first_iv_seq, alt_second_iv_seq = self.get_pair_alt_iv(alt_first, alt_second)
+                                        alt_iv_seq = self.combine_pair_iv_seq(alt_first_iv_seq, alt_second_iv_seq)
+                                        
+                                        if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):    
+                                                self.assign_read_to_region(alt_iv_seq)                                   
+                                                if self.bin_filter:
+                                                        self.assign_read_to_bin_filter(alt_iv_seq)    
+                                        elif self.is_overlapped_read_in_one_gene_CER_region(alt_iv_seq)[0]:
+                                                OneGene = self.is_overlapped_read_in_one_gene_CER_region(alt_iv_seq)[1]
+                                                self.assign_read_to_CER_region(alt_iv_seq,OneGene)
+
                                                         
         @staticmethod
         def CIRs_in_consitutive_junction_graph(graph):
@@ -467,7 +489,9 @@ class IRI_quant(object):
                                 CIR_effective_length = self.CIR_effective_length[gene_id][CIR_number]
                                 if CIR_effective_length == 0: 
                                         continue
-                                
+                                if self.total_read_count==0:
+                                        continue
+
                                 CIR_read_count = self.counts[gene_id]["constitutive_intronic_region"][CIR_number]
                                 CIR_RPKM = CIR_read_count / (CIR_effective_length / 1000.0) / (self.total_read_count / 1000000.0)     
                                 
@@ -539,7 +563,9 @@ class IRI_quant(object):
                         
                         if gene_CIR_effective_length == 0:
                                 continue
-        
+                        if self.total_read_count==0:
+                                continue
+
                         gene_CIR_read_count = sum(self.counts[gene_id]["constitutive_intronic_region"].values())
                         gene_CER_read_count = sum(self.counts[gene_id]["constitutive_exonic_region"].values())
                         
