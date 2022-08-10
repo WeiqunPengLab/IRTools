@@ -121,7 +121,7 @@ Mappability score bigWig file (depends on species,
                         species (i.e. hg19 or mm9) for which a default
                         annotation file (default for 50 bps of single end RNA-
                         Seq library) can be downloaded and used. If specified,
-                        mappability will take into account.
+                        mappability will be take into account.
                         
 Note: To take into account mappability, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
                         
