@@ -1,3 +1,11 @@
+# Developer Note: IRTools diff works by first filtering out NA and inf
+# values using a filtering algorithm dependent on whether the analysis
+# is specified as paired or unpaired. In IRTools quant, some genes are
+# not present in the output file is there are no reads for that gene 
+# the inputted BAM file. Since those genes would have a CER read count
+# of 0 and a CIR read count of 0, it would not affect the output of
+# IRTools diff as the NA value would be disregarded anyways.
+
 import sys
 import os
 import logging
