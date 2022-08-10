@@ -311,7 +311,7 @@ The file format is as follows.
 
 ## Tutorial
 
-The following tutorial will demonstrate how to use IRTools. We will be working with mm9 activated/resting B cell data. Due to constraints with file sizes, we do not provide the data for users to run the following commands on their own.
+The following tutorial will demonstrate how to use IRTools. We will be working with mm9 data. Due to constraints with file sizes, we do not provide the data for users to run the following commands on their own.
 
 ### Create an annotation file
 
@@ -325,7 +325,7 @@ Pre-prepared annotation files for hg19 and mm9 can be found in the [data](IRTool
 
 ### Determine data parameters
 
-Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` to determine these parameters. The following is an example of running `infer_experiment.py` on replicate 1 of resting B cell data.
+Before proceeding with intron retention analysis, you must determine whether the data is pair-end or single-end and the data's strand specificity. If this information is not known, you can run `infer_experiment.py` to determine these parameters. The following is an example of running `infer_experiment.py`.
 
 Note: To run `infer_experiment.py`, download [RSeQC 4.0.0](IRTools/utility/RSeQC-4.0.0), and install: `python setup.py install`
 
@@ -344,7 +344,7 @@ Fraction of reads explained by "1+-,1-+,2++,2--": 0.4996
 
 It is important to keep a record of this output as the information will be needed when running `IRTools quant`. 
 
-The first line of the output gives whether the data is pair-end or single-end. In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly. If the data is single-end it does not matter whether or not the BAM file is sorted by name.
+The first line of the output gives whether the data is pair-end or single-end. <In this case, the data is pair-end, meaning that the BAM file must be sorted by name to run `IRTools quant` properly.> If the data is single-end it does not matter whether or not the BAM file is sorted by name.
 
 The second line of the output gives the fraction of total mapped reads where the strand specificity could not be determined. This number should be relatively low otherwise it could indicate that the data's quality is not great. 
 
@@ -380,7 +380,7 @@ gene_id gene_iv gene_CIR_length gene_CER_length gene_CIR_read_count     gene_CER
 
 ### Analyze differential intron retention
 
-The final step of the IRTools pipeline is analyzing differential intron retention across samples using `IRTools diff`. The following is an example of running `IRTools diff` on resting and activated B cell data with three replicates each.
+The final step of the IRTools pipeline is analyzing differential intron retention across samples using `IRTools diff`. The following is an example of running `IRTools diff` on data with three replicates each.
 
 ```
 IRTools diff -q IRI --indir quant -s1 B_0h_R1,B_0h_R2,B_0h_R3 -s2 B_24h_R1,B_24h_R2,B_24h_R3 -n B_rest_active
