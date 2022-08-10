@@ -273,7 +273,7 @@ The file format is as follows.
 | Aaas | 0.189649931299 | 0.558970463129 | 0.008,0.01,0.007 | 0.012,0.008,0.019 | 0.005 |
 | 9530051G07Rik | 0.00474936472952 | 0.0199711015431 | 0.0,0.0,0.0 | 0.183,0.366,0.0 0.183 |
 
-2\. `NAME.diff.IRI.introns.txt` is the detection of differential intron retention index from two RNA-Seq samples S1FILES and S2FILES for all introns.
+2\. `NAME.diff.IRI.introns.txt` is the detection of differential intron retention index from two RNA-Seq samples S1FILES and S2FILES for all CIRs.
 
 The file format is as follows.
 
@@ -294,14 +294,14 @@ The file format is as follows.
 | gene_id |	PValue |	FDR |	gene_IRC_S1 |	gene_IRC_S2 |	gene_IRC_difference |
 | --- | --- | --- | --- | --- | --- |
 
-2\. `NAME.diff.IRC.introns.txt` is the detection of differential intron retention coefficient from two RNA-Seq samples S1FILES and S2FILES for all introns.
+2\. `NAME.diff.IRC.introns.txt` is the detection of differential intron retention coefficient from two RNA-Seq samples S1FILES and S2FILES for all CIRs.
 
 The file format is as follows.
 
 | CIR_id |	PValue |	FDR |	intron_IRC_S1 |	intron_IRC_S2 |	intron_IRC_difference |
 | --- | --- | --- | --- | --- | --- |
 
-3\. `NAME.diff.IRC.junctions.txt` is the detection of differential intron retention coefficient from two RNA-Seq samples S1FILES and S2FILES for all exon-intron junctions.
+3\. `NAME.diff.IRC.junctions.txt` is the detection of differential intron retention coefficient from two RNA-Seq samples S1FILES and S2FILES for all CJs.
 
 The file format is as follows.
 
@@ -354,7 +354,7 @@ The steps above should be repeated with all replicates.
 
 ### Quantify intron retention
 
-`IRTools quant` allows users to detect and quantify intron retention events in RNA-Seq data. The intron retention events can either be quantified as an intron retention index (IRI) or intron retention coefficient (IRC). The IRI of a constitutive intronic region (CIR) is defined as the ratio of its read density to the read density of its adjacent constitutive exonic regions (CERs) and the IRI of a gene is defined as the ratio of the overall read density of CIRs in that gene to the overall read density of CERs. The IRC of a CIR is defined as the fraction of junction reads that are exon-intron junctions (average of 5' exon-intron junction reads and 3' exon-intron junction reads) and the IRC of a gene is defined as the fraction of junction reads altogether in this gene that are exon-intron junctions. Additionally, IRC also quantifies constitutive junctions for which the IRC is defined as the fraction of junction reads that are exon-intron junctions. The following is an example of running `IRTools quant` in IRI mode with the parameters obtained above.
+`IRTools quant` allows users to detect and quantify intron retention events in RNA-Seq data. The intron retention events can either be quantified as an intron retention index (IRI) or intron retention coefficient (IRC). The IRI of a CIR is defined as the ratio of its read density to the read density of its adjacent CERs and the IRI of a gene is defined as the ratio of the overall read density of CIRs in that gene to the overall read density of CERs. The IRC of a CIR is defined as the fraction of junction reads that are CJs (average of 5' CJ reads and 3' CJ reads) and the IRC of a gene is defined as the fraction of junction reads altogether in this gene that are CJs. Additionally, IRC also quantifies CJs for which the IRC is defined as the fraction of junction reads that are CJs. The following is an example of running `IRTools quant` in IRI mode with the parameters obtained above.
 
 ```
 IRTools quant -q IRI -i bam/B_0h_R1.bam -p paired -s fr-unstranded -e mm9 -f BAM -n B_0h_R1 --outdir quant
