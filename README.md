@@ -103,7 +103,7 @@ IR quantification types: intron retention index (IRI), intron retention coeffici
 
 **-i/--alt-file SAMPLELIB**
 
-Input RNA-Seq alignment file. If IR quantification type is "IRI", the input file can be BAM or BED file. If IR quantification type is "IRC", the input file can only be BAM file.
+Input RNA-Seq alignment file. The input file must be a BAM file.
 
 **-p/--read-type {paired,single}**
 
