@@ -315,13 +315,13 @@ The following tutorial will demonstrate how to use IRTools. We will be working w
 
 ### Create an annotation file
 
-The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. The following is an example of using `IRTools annotation` to create the annotation file for the mm9 genome.
+The first step in the IRTools pipeline is creating an annotation file to be used for further intron retention analysis. The following is an example of using `IRTools annotation` to create the annotation file for the mm9 genome. 
 
 ```
 IRTools annotation -g gtf/mm9_2015.gtf -o gtf/mm9_annotation.gtf 
 ```
 
-Pre-prepared annotation files for hg19 and mm9 can be found in the [data](IRTools/data) directory.
+Pre-prepared annotation files for hg19 and mm9 can be found in the [data](IRTools/data) directory. These annotation files were generated with GTF files downloaded from [iGenome](https://support.illumina.com/sequencing/sequencing_software/igenome.html).
 
 ### Determine data parameters
 
