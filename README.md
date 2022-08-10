@@ -8,7 +8,7 @@ IRTools is a computational toolset for detection and quantitative analysis of in
 
 ## Installation
 
-To use `IRTools`, you will need `python 3.6.9`.
+To use `IRTools`, you will need `python 3.6.9` or potentially above. Note that this has only been tested in `python 3.6.9`.
 
 #### PIP
 
