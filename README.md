@@ -150,12 +150,6 @@ Sample name, which will be used to generate output
 **--outdir OUTDIR**
 
 If specified, all output files will be written to that directory. DEFAULT: the current working directory.
-
-**-f/--format {BAM,BED}** (specified when -q IRI)
-
-Set when IR quantifiation type is "IRI". Specify input
-                        RNA-Seq alignment file format: "BAM", "BED". DEFAULT:
-                        "BAM".
                         
 **-m/--min_overlap MINOVERLAP** (specified when -q IRC)
 
