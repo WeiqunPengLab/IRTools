@@ -404,7 +404,7 @@ gene_id PValue  FDR     gene_IRI_S1     gene_IRI_S2     gene_IRI_difference
 0610009L18Rik   0.09138325586455809     0.12748981426961586     0.4235932918731762,0.37842494303340185,0.4278781983026458       0.598773864510687,1.282172938644743,1.9609292502639917  0.8706598734033992
 ```
 
-An optional step to further analyze differential intron retention in individual CIRs/genes/junctions is to visualize them using [IGV](https://software.broadinstitute.org/software/igv/) or another genome viewer of your choice. The following is what the Gar1 gene looks like when visualized on IGV with the mm9 activated/resting B cell data.
+An helpful step to check differential intron retention in individual CIRs/genes/junctions is to visualize them using [IGV](https://software.broadinstitute.org/software/igv/) or another genome viewer of your choice. The following is what the Gar1 gene looks like when visualized on IGV with this data.
 
 <br>
 <img src="IGV_example.PNG" width="850">
