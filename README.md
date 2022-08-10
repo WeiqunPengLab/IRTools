@@ -8,7 +8,9 @@ IRTools is a computational toolset for detection and quantitative analysis of in
 
 ## Installation
 
-To use `IRTools`, you will need `python 3.6.9` or potentially above. Note that this has only been tested in `python 3.6.9`.
+To use `IRTools`, you will need `python 3.6.9` or potentially above. 
+
+Note: This has only been tested in `python 3.6.9`.
 
 #### PIP
 
@@ -30,6 +32,7 @@ pip install HTSeq==0.13.5
 pip install pysam==0.19.1
 ```
 
+Note: This has only been tested with numpy 1.19.5, scipy 1.5.4, pandas 1.1.5, networkx  2.5.1, and bx-python 0.8.12, but will likely work with any later version.
 
 #### From source
 
