@@ -3,7 +3,463 @@ import os
 import logging
 import re
 import collections
+import copy
+import gzip
+import hashlib
+import shutil
+import tempfile
+import time
+import urllib.request, urllib.parse, urllib.error
+import subprocess
 import HTSeq
+
+INPUT_FEATURE_TYPES = {"exon"}
+TRANSCRIPT_FEATURE_TYPES = {"transcript", "mRNA", "lnc_RNA", "ncRNA", "rRNA", "tRNA", "miRNA", "snRNA", "snoRNA"}
+MAPFILE_SPECIES_ALIASES = {"mm11": "mm39"}
+SPECIES_MAPPABILITY_SOURCES = {
+        # hg19/hg38/mm9/mm10 follow the Hoffman Lab raw layout visible on the site.
+        "hg19": ("bedgraph", "https://bismap.hoffmanlab.org/raw/hg19/k{read_length}.umap.bedgraph.gz"),
+        "hg38": ("bedgraph", "https://bismap.hoffmanlab.org/raw/hg38/k{read_length}.umap.bedgraph.gz"),
+        "mm9": ("bedgraph", "https://bismap.hoffmanlab.org/raw/mm9/k{read_length}.umap.bedgraph.gz"),
+        "mm10": ("bedgraph", "https://bismap.hoffmanlab.org/raw/mm10/k{read_length}.umap.bedgraph.gz"),
+        "mm39": ("bigwig", "https://bismap.hoffmanlab.org/raw/mm39/umap/bigWigFiles/k{read_length}.merged.GRCm39_umap.MultiReadMappability.bigWig"),
+}
+
+def normalize_parent_ids(value):
+        if value is None:
+                return []
+        if isinstance(value, list):
+                parent_values = value
+        else:
+                parent_values = [value]
+        normalized = []
+        for item in parent_values:
+                normalized.extend([part for part in str(item).split(",") if part])
+        return normalized
+
+def first_attr(feature, keys):
+        for key in keys:
+                value = feature.attr.get(key)
+                if value:
+                        if isinstance(value, list):
+                                if len(value) > 0:
+                                        return value[0]
+                        else:
+                                return value
+        return None
+
+def extract_refseq_accession_from_text(text):
+        if not text:
+                return None
+        match = re.search(r'([NX][MR]_\d+(?:\.\d+)?)', str(text))
+        if match:
+                return match.group(1)
+        return None
+
+def normalize_map_species(species_name):
+        return MAPFILE_SPECIES_ALIASES.get(species_name, species_name)
+
+def default_mappability_cache_dir():
+        return os.path.join(os.path.dirname(__file__), "data", "mappability_cache")
+
+def mappability_cache_dir(cache_dir=None):
+        if cache_dir:
+                return os.path.abspath(os.path.expanduser(cache_dir))
+        return default_mappability_cache_dir()
+
+def cache_dir_is_writable(cache_dir):
+        try:
+                os.makedirs(cache_dir, exist_ok=True)
+                with tempfile.NamedTemporaryFile(prefix=".irtools_write_test_", dir=cache_dir, delete=True):
+                        pass
+                return True
+        except OSError:
+                return False
+
+def require_mappability_cache_dir(cache_dir):
+        if cache_dir_is_writable(cache_dir):
+                return
+
+        default_cache_dir = default_mappability_cache_dir()
+        if os.path.abspath(cache_dir) == os.path.abspath(default_cache_dir):
+                raise Exception(
+                        "IRTools cannot write the mappability cache inside the installed package:\n"
+                        "  {}\n"
+                        "Please rerun annotation with a writable cache directory, for example:\n"
+                        "  IRTools annotation ... --map-cache-dir /path/to/project/irtools_mappability_cache".format(cache_dir)
+                )
+
+        raise Exception(
+                "IRTools cannot write the mappability cache directory passed to --map-cache-dir:\n"
+                "  {}\n"
+                "Please choose a writable directory and rerun annotation.".format(cache_dir)
+        )
+
+def annotation_cache_token(inputfile):
+        inputfile = os.path.abspath(inputfile)
+        stat = os.stat(inputfile)
+        token_input = "{}|{}|{}".format(inputfile, stat.st_size, stat.st_mtime_ns)
+        return hashlib.md5(token_input.encode("utf-8")).hexdigest()[:12]
+
+def cached_blacklist_path(cache_stem, cache_dir=None):
+        safe_stem = re.sub(r'[^A-Za-z0-9._-]+', "_", cache_stem)
+        return os.path.join(mappability_cache_dir(cache_dir), safe_stem + ".bed.gz")
+
+def report_cache_status(cache_path, exists):
+        if exists:
+                logging.info("Using cached low-mappability BED: %s", cache_path)
+                print("Using cached low-mappability BED: {}".format(cache_path))
+        else:
+                logging.info("Low-mappability BED cache is missing: %s", cache_path)
+                print("Low-mappability BED cache not found: {}".format(cache_path))
+                print("IRTools needs to generate it now. This may take some time on the first run.")
+
+def validate_download(temp_path, suffix):
+        if suffix.endswith(".gz"):
+                with gzip.open(temp_path, "rt", encoding="utf-8") as handle:
+                        handle.read(1)
+
+def download_with_wget(url, suffix, retries):
+        wget_path = shutil.which("wget")
+        if not wget_path:
+                return None
+
+        temp_dir = tempfile.mkdtemp(prefix="irtools_map_")
+        temp_path = os.path.join(temp_dir, "download" + suffix)
+        for attempt in range(1, retries + 1):
+                logging.info("Downloading mappability resource with wget from %s (attempt %i/%i)", url, attempt, retries)
+                print("Downloading mappability resource with wget from {} (attempt {}/{})".format(url, attempt, retries))
+                try:
+                        subprocess.run(
+                                [wget_path, "-c", "-O", temp_path, url],
+                                check=True,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
+                        )
+                        validate_download(temp_path, suffix)
+                        return temp_path
+                except Exception as exc:
+                        if attempt < retries:
+                                wait_seconds = min(5 * attempt, 15)
+                                logging.warning("wget download attempt %i failed for %s: %s. Retrying in %i seconds.", attempt, url, exc, wait_seconds)
+                                print("wget download attempt {} failed. Retrying in {} seconds.".format(attempt, wait_seconds))
+                                time.sleep(wait_seconds)
+                        else:
+                                if os.path.exists(temp_path):
+                                        os.unlink(temp_path)
+                                try:
+                                        os.rmdir(temp_dir)
+                                except OSError:
+                                        pass
+                                raise
+        return None
+
+def download_to_tempfile(url, suffix, retries=3):
+        wget_download = download_with_wget(url, suffix, retries)
+        if wget_download:
+                return wget_download
+
+        last_error = None
+        for attempt in range(1, retries + 1):
+                temp_handle = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                temp_path = temp_handle.name
+                temp_handle.close()
+                logging.info("Downloading mappability resource from %s (attempt %i/%i)", url, attempt, retries)
+                print("Downloading mappability resource from {} (attempt {}/{})".format(url, attempt, retries))
+                try:
+                        with urllib.request.urlopen(url, timeout=120) as response, open(temp_path, "wb") as out_handle:
+                                expected_size = response.headers.get("Content-Length")
+                                while True:
+                                        chunk = response.read(10 * 1024 * 1024)
+                                        if not chunk:
+                                                break
+                                        out_handle.write(chunk)
+
+                        if expected_size is not None and os.path.getsize(temp_path) != int(expected_size):
+                                raise IOError(
+                                        "Downloaded file size {} does not match expected size {}.".format(
+                                                os.path.getsize(temp_path),
+                                                expected_size,
+                                        )
+                                )
+
+                        validate_download(temp_path, suffix)
+                        return temp_path
+                except Exception as exc:
+                        last_error = exc
+                        if os.path.exists(temp_path):
+                                os.unlink(temp_path)
+                        if attempt < retries:
+                                wait_seconds = min(5 * attempt, 15)
+                                logging.warning("Download attempt %i failed for %s: %s. Retrying in %i seconds.", attempt, url, exc, wait_seconds)
+                                print("Download attempt {} failed. Retrying in {} seconds.".format(attempt, wait_seconds))
+                                time.sleep(wait_seconds)
+
+        raise IOError("Failed to download a valid mappability resource from {} after {} attempts: {}".format(url, retries, last_error))
+
+def iter_low_mappability_segments(feature, entries, map_score_cutoff):
+        current = feature.iv.start
+        for entry_start, entry_end, score in sorted(entries, key=lambda item: (item[0], item[1])):
+                start = max(feature.iv.start, int(entry_start))
+                end = min(feature.iv.end, int(entry_end))
+                if end <= start:
+                        continue
+
+                if start > current:
+                        yield current, start
+
+                if score < map_score_cutoff:
+                        yield start, end
+
+                if end > current:
+                        current = end
+
+        if current < feature.iv.end:
+                yield current, feature.iv.end
+
+def build_blacklist_from_bigwig(bigwig_path, blacklist_path, features, map_score_cutoff):
+        from bx.bbi.bigwig_file import BigWigFile
+
+        os.makedirs(os.path.dirname(blacklist_path), exist_ok=True)
+        with open(bigwig_path, "rb") as bigwig_handle:
+                bigwig = BigWigFile(bigwig_handle)
+                with gzip.open(blacklist_path, "wt", encoding="utf-8") as out_handle:
+                        for feature in features:
+                                chrom = feature.iv.chrom.encode("utf-8")
+                                entries = bigwig.get(chrom, feature.iv.start, feature.iv.end) or []
+                                for start, end in iter_low_mappability_segments(feature, entries, map_score_cutoff):
+                                        out_handle.write(
+                                                "{}\t{}\t{}\t.\t0\t{}\n".format(
+                                                        feature.iv.chrom,
+                                                        start,
+                                                        end,
+                                                        feature.iv.strand,
+                                                )
+                                        )
+
+def build_blacklist_from_bedgraph(bedgraph_path, blacklist_path, features, map_score_cutoff):
+        feature_entries = collections.defaultdict(list)
+        feature_state = {}
+        for feature in features:
+                feature_entries[(feature.iv.chrom, feature.iv.strand)].append(feature)
+
+        for key in feature_entries:
+                feature_entries[key].sort(key=lambda feature: feature.iv.start)
+                feature_state[key] = {"index": 0, "active": []}
+
+        opener = gzip.open if bedgraph_path.endswith(".gz") else open
+        with opener(bedgraph_path, "rt", encoding="utf-8") as in_handle:
+                for line in in_handle:
+                        if not line.strip() or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+                                continue
+                        fields = line.rstrip("\n").split("\t")
+                        if len(fields) < 4:
+                                continue
+                        chrom = fields[0]
+                        start = int(fields[1])
+                        end = int(fields[2])
+                        score = float(fields[3])
+                        for strand in ("+", "-"):
+                                key = (chrom, strand)
+                                chrom_features = feature_entries.get(key, [])
+                                if not chrom_features:
+                                        continue
+                                state = feature_state[key]
+                                while state["index"] < len(chrom_features) and chrom_features[state["index"]].iv.start < end:
+                                        state["active"].append(chrom_features[state["index"]])
+                                        state["index"] += 1
+                                state["active"] = [feature for feature in state["active"] if feature.iv.end > start]
+                                for feature in state["active"]:
+                                        feature.attr.setdefault("_map_entries", []).append((start, end, score))
+
+        os.makedirs(os.path.dirname(blacklist_path), exist_ok=True)
+        with gzip.open(blacklist_path, "wt", encoding="utf-8") as out_handle:
+                for feature in features:
+                        entries = feature.attr.pop("_map_entries", [])
+                        for start, end in iter_low_mappability_segments(feature, entries, map_score_cutoff):
+                                out_handle.write(
+                                        "{}\t{}\t{}\t.\t0\t{}\n".format(
+                                                feature.iv.chrom,
+                                                start,
+                                                end,
+                                                feature.iv.strand,
+                                        )
+                                )
+
+def resolve_blacklist_bed(mapfile, inputfile, features, read_length, map_score_cutoff, cache_dir=None):
+        if not mapfile:
+                return None
+
+        normalized_species = normalize_map_species(mapfile)
+        source_token = annotation_cache_token(inputfile)
+        resolved_cache_dir = mappability_cache_dir(cache_dir)
+
+        if normalized_species in SPECIES_MAPPABILITY_SOURCES:
+                cache_stem = "{}_k{}_cutoff{}_{}".format(normalized_species, read_length, str(map_score_cutoff).replace(".", "p"), source_token)
+                blacklist_path = cached_blacklist_path(cache_stem, resolved_cache_dir)
+                report_cache_status(blacklist_path, os.path.exists(blacklist_path))
+                if os.path.exists(blacklist_path):
+                        return blacklist_path
+                require_mappability_cache_dir(resolved_cache_dir)
+
+                source_type, source_url_template = SPECIES_MAPPABILITY_SOURCES[normalized_species]
+                source_url = source_url_template.format(read_length=read_length)
+                temp_suffix = ".bw" if source_type == "bigwig" else ".bedgraph.gz"
+                temp_resource = download_to_tempfile(source_url, temp_suffix)
+                try:
+                        if source_type == "bigwig":
+                                build_blacklist_from_bigwig(temp_resource, blacklist_path, features, map_score_cutoff)
+                        else:
+                                build_blacklist_from_bedgraph(temp_resource, blacklist_path, features, map_score_cutoff)
+                finally:
+                        if os.path.exists(temp_resource):
+                                os.unlink(temp_resource)
+                logging.info("Generated low-mappability BED cache: %s", blacklist_path)
+                print("Generated low-mappability BED cache: {}".format(blacklist_path))
+                return blacklist_path
+
+        if re.search(r'\.bed(\.gz)?$', mapfile, re.IGNORECASE):
+                return mapfile
+
+        if re.search(r'\.bedgraph(\.gz)?$', mapfile, re.IGNORECASE):
+                bedgraph_path = os.path.abspath(mapfile)
+                stat = os.stat(bedgraph_path)
+                map_token_input = "{}|{}|{}".format(bedgraph_path, stat.st_size, stat.st_mtime_ns)
+                map_token = hashlib.md5(map_token_input.encode("utf-8")).hexdigest()[:12]
+                cache_stem = "{}_k{}_cutoff{}_{}_{}".format(
+                        os.path.splitext(os.path.basename(bedgraph_path))[0],
+                        read_length,
+                        str(map_score_cutoff).replace(".", "p"),
+                        source_token,
+                        map_token,
+                )
+                blacklist_path = cached_blacklist_path(cache_stem, resolved_cache_dir)
+                report_cache_status(blacklist_path, os.path.exists(blacklist_path))
+                if os.path.exists(blacklist_path):
+                        return blacklist_path
+                require_mappability_cache_dir(resolved_cache_dir)
+                build_blacklist_from_bedgraph(bedgraph_path, blacklist_path, features, map_score_cutoff)
+                logging.info("Generated low-mappability BED cache: %s", blacklist_path)
+                print("Generated low-mappability BED cache: {}".format(blacklist_path))
+                return blacklist_path
+
+        if re.search(r'(bigWig|\.bw)$', mapfile, re.IGNORECASE):
+                bigwig_path = os.path.abspath(mapfile)
+                stat = os.stat(bigwig_path)
+                map_token_input = "{}|{}|{}".format(bigwig_path, stat.st_size, stat.st_mtime_ns)
+                map_token = hashlib.md5(map_token_input.encode("utf-8")).hexdigest()[:12]
+                cache_stem = "{}_k{}_cutoff{}_{}_{}".format(
+                        os.path.splitext(os.path.basename(bigwig_path))[0],
+                        read_length,
+                        str(map_score_cutoff).replace(".", "p"),
+                        source_token,
+                        map_token,
+                )
+                blacklist_path = cached_blacklist_path(cache_stem, resolved_cache_dir)
+                report_cache_status(blacklist_path, os.path.exists(blacklist_path))
+                if os.path.exists(blacklist_path):
+                        return blacklist_path
+                require_mappability_cache_dir(resolved_cache_dir)
+                build_blacklist_from_bigwig(bigwig_path, blacklist_path, features, map_score_cutoff)
+                logging.info("Generated low-mappability BED cache: %s", blacklist_path)
+                print("Generated low-mappability BED cache: {}".format(blacklist_path))
+                return blacklist_path
+
+        raise Exception(
+                "\"{}\" is neither a supported species shortcut, nor a local BED file, nor a local bedGraph file, nor a local bigWig file.".format(mapfile)
+        )
+
+def effective_lengths_from_blacklist(features, blacklist_bed):
+        gene_map_score = HTSeq.GenomicArray("auto", stranded=True, typecode="i")
+        for feature in features:
+                gene_map_score[feature.iv] = 1
+
+        opener = gzip.open if blacklist_bed.endswith(".gz") else open
+        with opener(blacklist_bed, "rt", encoding="utf-8") as bed_handle:
+                for line in bed_handle:
+                        if not line.strip() or line.startswith("#"):
+                                continue
+                        fields = line.rstrip("\n").split("\t")
+                        chrom = fields[0]
+                        start = int(fields[1])
+                        end = int(fields[2])
+                        strand = fields[5] if len(fields) >= 6 else "."
+                        gene_map_score[HTSeq.GenomicInterval(chrom, start, end, strand)] = 0
+
+        effective_lengths = {}
+        for feature in features:
+            effective_lengths[(feature.attr["gene_id"], feature.attr["constitutive_intronic_region_number"])] = int(sum(gene_map_score[feature.iv]))
+        return effective_lengths
+
+def transcript_accession(feature):
+        attr_candidates = []
+        for key in ["transcript_id", "transcript_name", "Name", "ID", "Dbxref", "transcript"]:
+                value = feature.attr.get(key)
+                if isinstance(value, list):
+                        attr_candidates.extend(value)
+                elif value:
+                        attr_candidates.append(value)
+        for candidate in attr_candidates:
+                accession = extract_refseq_accession_from_text(candidate)
+                if accession:
+                        return accession
+        return None
+
+def normalize_input_features(raw_features):
+        transcript_info = {}
+
+        for feature in raw_features:
+                if feature.type not in TRANSCRIPT_FEATURE_TYPES:
+                        continue
+                raw_id = first_attr(feature, ["ID", "transcript_id", "transcript_name", "Name"])
+                parent_gene_id = first_attr(feature, ["gene_id", "gene", "gene_name"])
+                if not parent_gene_id:
+                        parent_ids = normalize_parent_ids(feature.attr.get("Parent"))
+                        if parent_ids:
+                                parent_gene_id = parent_ids[0]
+                transcript_id = first_attr(feature, ["transcript_id", "transcript_name", "Name", "ID"]) or raw_id
+                accession = transcript_accession(feature)
+                info = {
+                        "gene_id": parent_gene_id,
+                        "transcript_id": transcript_id,
+                        "accession": accession,
+                }
+                for key in {raw_id, transcript_id}:
+                        if key:
+                                transcript_info[key] = info
+
+        normalized = []
+        for feature in raw_features:
+                if feature.type not in INPUT_FEATURE_TYPES:
+                        continue
+
+                direct_gene_id = first_attr(feature, ["gene_id", "gene", "gene_name"])
+                direct_transcript_id = first_attr(feature, ["transcript_id", "transcript_name"])
+                parent_ids = normalize_parent_ids(feature.attr.get("Parent"))
+
+                transcript_keys = []
+                if direct_transcript_id:
+                        transcript_keys.append(direct_transcript_id)
+                transcript_keys.extend(parent_ids)
+                if not transcript_keys:
+                        transcript_keys = [None]
+
+                for transcript_key in transcript_keys:
+                        info = transcript_info.get(transcript_key, {})
+                        transcript_id = direct_transcript_id or info.get("transcript_id") or transcript_key
+                        gene_id = direct_gene_id or info.get("gene_id")
+
+                        if not transcript_id or not gene_id:
+                                continue
+
+                        normalized_feature = copy.deepcopy(feature)
+                        normalized_feature.attr = dict(normalized_feature.attr)
+                        normalized_feature.attr["gene_id"] = gene_id
+                        normalized_feature.attr["transcript_id"] = transcript_id
+                        normalized.append(normalized_feature)
+
+        return normalized
 
 # bad genes are those which have exons in different chromosomes or strands.
 def find_bad_genes(gtffile):
@@ -65,46 +521,6 @@ def overlap(iv, exon_iv_list):
                         return True
         return False
 
-# Given the start codon, stop codon and transcript region, return 5' UTR region and 3' UTR region.
-def find_UTR_region_iv(start_codon_region_iv, stop_codon_region_iv, transcript_region_iv):
-        UTR_region_chrom = transcript_region_iv.chrom
-        UTR_region_strand = transcript_region_iv.strand
-        if UTR_region_strand == "+":
-                five_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, transcript_region_iv.start, start_codon_region_iv.start, UTR_region_strand)
-                three_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, stop_codon_region_iv.end, transcript_region_iv.end, UTR_region_strand)
-        elif UTR_region_strand == "-":
-                five_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, start_codon_region_iv.end, transcript_region_iv.end, UTR_region_strand)
-                three_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, transcript_region_iv.start, stop_codon_region_iv.start, UTR_region_strand)
-        return (five_UTR_region_iv, three_UTR_region_iv)
-
-def find_CDS_and_UTR_region_iv(start_codon_region_iv, stop_codon_region_iv, transcript_region_iv):
-        UTR_region_chrom = transcript_region_iv.chrom
-        UTR_region_strand = transcript_region_iv.strand
-        if UTR_region_strand == "+":
-                CDS_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, start_codon_region_iv.start, stop_codon_region_iv.start, UTR_region_strand)
-                five_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, transcript_region_iv.start, start_codon_region_iv.start, UTR_region_strand)
-                three_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, stop_codon_region_iv.end, transcript_region_iv.end, UTR_region_strand)
-        elif UTR_region_strand == "-":
-                CDS_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, stop_codon_region_iv.end, start_codon_region_iv.end, UTR_region_strand)
-                five_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, start_codon_region_iv.end, transcript_region_iv.end, UTR_region_strand)
-                three_UTR_region_iv = HTSeq.GenomicInterval(UTR_region_chrom, transcript_region_iv.start, stop_codon_region_iv.start, UTR_region_strand)
-        return (CDS_region_iv, five_UTR_region_iv, three_UTR_region_iv)   
-
-def find_CDS_and_UTR_region(start_codon_region, stop_codon_region, transcript_region):
-        CDS_region = collections.defaultdict( lambda: dict() )
-        five_UTR_region = collections.defaultdict( lambda: dict() )
-        three_UTR_region = collections.defaultdict( lambda: dict() )        
-        for gene_id in start_codon_region.keys():
-                for transcript_id in start_codon_region[gene_id].keys():
-                        start_codon_region_iv = start_codon_region[gene_id][transcript_id]
-                        stop_codon_region_iv = stop_codon_region[gene_id][transcript_id]
-                        transcript_region_iv = transcript_region[gene_id][transcript_id]
-                        (CDS_region_iv, five_UTR_region_iv, three_UTR_region_iv) = find_CDS_and_UTR_region_iv(start_codon_region_iv, stop_codon_region_iv, transcript_region_iv)
-                        CDS_region[gene_id][transcript_id] = CDS_region_iv
-                        five_UTR_region[gene_id][transcript_id] = five_UTR_region_iv
-                        three_UTR_region[gene_id][transcript_id] = three_UTR_region_iv                        
-        return (CDS_region, five_UTR_region, three_UTR_region)
-
 def find_region_number(pos, feature_list, start_d_or_end_d_as_pos):
         for feature in feature_list:
                 if pos == getattr(feature.iv, start_d_or_end_d_as_pos):
@@ -123,18 +539,11 @@ def run(args):
         gene_region = {}
         gene_region_length = collections.Counter()
         transcript_region = collections.defaultdict( lambda: dict() )
-        start_codon_region = collections.defaultdict( lambda: dict() )
-        stop_codon_region = collections.defaultdict( lambda: dict() )
+               
         
-        CDS_region = collections.defaultdict( lambda: dict() )
-        five_UTR_region = collections.defaultdict( lambda: dict() )
-        three_UTR_region = collections.defaultdict( lambda: dict() )
-              	                
-        
-        # Read features from the input GTF file.
-        gtffile = HTSeq.GFF_Reader(args.inputfile, end_included=True) # issue is likely somewhere in these two lines
-        gtffile = filter(lambda feature: re.search(r'chr[a-zA-Z0-9]+$', feature.iv.chrom), gtffile)
-        gtffile = list(gtffile)
+        # Read features from the input annotation file (GTF or GFF3) and normalize the attributes used downstream.
+        gtffile = HTSeq.GFF_Reader(args.inputfile, end_included=True)
+        gtffile = normalize_input_features(list(gtffile))
         bad_gene_list = find_bad_genes(gtffile)
         logging.info("Removing genes with exons in different chromosomes or strands (%i discarded)" % len(bad_gene_list))
         gtffile = filter(lambda feature: feature.attr['gene_id'] not in bad_gene_list, gtffile)
@@ -143,18 +552,9 @@ def run(args):
                         gene_id = feature.attr["gene_id"]
                         exons[gene_id][feature.iv] += feature.attr["transcript_id"]
                         extend_transcript_region(feature, transcript_region)
-                elif feature.type == "start_codon":
-                        gene_id = feature.attr["gene_id"]
-                        transcript_id = feature.attr["transcript_id"]
-                        start_codon_region[gene_id][transcript_id] = feature.iv   
-                elif feature.type == "stop_codon":
-                        gene_id = feature.attr["gene_id"]
-                        transcript_id = feature.attr["transcript_id"]
-                        stop_codon_region[gene_id][transcript_id] = feature.iv                         
                         
         gene_region = find_gene_region(transcript_region)
         gene_region_length = find_gene_region_length(gene_region, transcript_region)
-        (CDS_region, five_UTR_region, three_UTR_region) = find_CDS_and_UTR_region(start_codon_region, stop_codon_region, transcript_region)
                  
         introns = collections.defaultdict( lambda: HTSeq.GenomicArrayOfSets("auto", stranded=True) )               
         for gene_id in list(transcript_region.keys()):
@@ -249,10 +649,7 @@ def run(args):
         
         
         # gene_constitutive_introns_bins defines that kind of intron bins that shared by all the transcripts in one gene.
-        # Each constitutive intron bin is a feature (feature type is "constitutive_intronic_region"), which has attribute: "gene_id". 
-        # For those intron bins in single transcript gene, if the intron bin is in 5' UTR, it will have attribute: "five_UTR_constitutive_intron";
-        # If the intron bin is in 3' UTR, it will have attribute: "three_UTR_constitutive_intron".
-        # Didn't define "five_UTR_constitutive_intron" or "three_UTR_constitutive_intron" for intron bins in multiple transcripts gene yet.
+        # Each constitutive intron bin is a feature (feature type is "constitutive_intronic_region"), which has attribute: "gene_id".
         logging.info("Generating constitutive intronic region (CIR) annotation")
         
         gene_constitutive_introns_bins = collections.defaultdict( lambda: list() )
@@ -264,14 +661,6 @@ def run(args):
         for gene_id in list(gene_region.keys()):
                 transcripts_in_gene = len(transcript_region[gene_id])
                 gene_iv = gene_region[gene_id]
-                exist_UTR_regions = False
-                if transcripts_in_gene == 1 and gene_id in list(start_codon_region.keys()):
-                        assert len(start_codon_region[gene_id]) == len(stop_codon_region[gene_id]) == 1
-                        transcript_id = list(start_codon_region[gene_id].keys())[0]
-                        start_codon_region_iv = list(start_codon_region[gene_id].values())[0]
-                        stop_codon_region_iv = list(stop_codon_region[gene_id].values())[0]
-                        (five_UTR_region_iv, three_UTR_region_iv) = find_UTR_region_iv(start_codon_region_iv, stop_codon_region_iv, transcript_region[gene_id][transcript_id])
-                        exist_UTR_regions = True
                 for iv, step_set in introns[gene_id][gene_iv].steps():
                         transcript_list = list(step_set)
                         if len(transcript_list) == transcripts_in_gene:
@@ -279,11 +668,6 @@ def run(args):
                                 feature.source = "IR_annotation"
                                 feature.attr = {}
                                 feature.attr["gene_id"] = gene_id
-                                if exist_UTR_regions == True:
-                                        if feature.iv.is_contained_in(five_UTR_region_iv):
-                                                feature.attr["five_UTR_constitutive_intron"] = "five_UTR_constitutive_intron"
-                                        elif feature.iv.is_contained_in(three_UTR_region_iv):
-                                                feature.attr["three_UTR_constitutive_intron"] = "three_UTR_constitutive_intron"
                                 gene_constitutive_introns_bins[gene_id].append(feature)
                                 gene_constitutive_introns_start_d[gene_id].add(feature.iv.start_d_as_pos)
                                 gene_constitutive_introns_end_d[gene_id].add(feature.iv.end_d_as_pos)
@@ -292,17 +676,36 @@ def run(args):
                 if gene_iv.strand == "-":
                         gene_constitutive_introns_bins[gene_id] = gene_constitutive_introns_bins[gene_id][::-1]
         
-        five_UTR_constitutive_introns = collections.defaultdict( lambda: list() )
-        three_UTR_constitutive_introns = collections.defaultdict( lambda: list() )
-        
         for constitutive_introns_bins_list in list(gene_constitutive_introns_bins.values()):
                 for i in range(len(constitutive_introns_bins_list)):
-                        gene_id = constitutive_introns_bins_list[i].attr["gene_id"]
-                        constitutive_intronic_region_number = constitutive_introns_bins_list[i].attr["constitutive_intronic_region_number"] = "%03d" % ( i+1 )    
-                        if "five_UTR_constitutive_intron" in list(constitutive_introns_bins_list[i].attr.keys()):
-                                five_UTR_constitutive_introns[gene_id].append(constitutive_intronic_region_number)
-                        elif "three_UTR_constitutive_intron" in list(constitutive_introns_bins_list[i].attr.keys()):
-                                three_UTR_constitutive_introns[gene_id].append(constitutive_intronic_region_number)
+                        constitutive_introns_bins_list[i].attr["constitutive_intronic_region_number"] = "%03d" % ( i+1 )
+
+        all_constitutive_introns = []
+        for constitutive_introns_bins_list in list(gene_constitutive_introns_bins.values()):
+                all_constitutive_introns.extend(constitutive_introns_bins_list)
+
+        gene_constitutive_introns_effective_length = collections.Counter()
+        if args.mapfile:
+                blacklist_bed = resolve_blacklist_bed(
+                        args.mapfile,
+                        args.inputfile,
+                        all_constitutive_introns,
+                        args.mapreadlength,
+                        args.mapcutoff,
+                        getattr(args, "mapcachedir", None),
+                )
+                effective_length_map = effective_lengths_from_blacklist(all_constitutive_introns, blacklist_bed)
+        else:
+                effective_length_map = {
+                        (feature.attr["gene_id"], feature.attr["constitutive_intronic_region_number"]): feature.iv.length
+                        for feature in all_constitutive_introns
+                }
+
+        for feature in all_constitutive_introns:
+                key = (feature.attr["gene_id"], feature.attr["constitutive_intronic_region_number"])
+                effective_length = effective_length_map[key]
+                feature.attr["constitutive_intronic_region_effective_length"] = effective_length
+                gene_constitutive_introns_effective_length[feature.attr["gene_id"]] += effective_length
                                 
                                                         
         # gene_constitutive_junction defines that kind of junction positions that join constitutive exon bin and constitutive intron bin in one gene.   
@@ -369,8 +772,6 @@ def run(args):
         # gene_region_features defines a feature for each gene that summarize some key info. feature iv is the gene region.
         # Feature type is "gene_region". Each feature has attributes: "gene_id", "transcripts_in_gene" (count how many transcripts in this gene), 
         # "gene_region_length", "constitutive_exonic_region_length", "constitutive_intronic_region_length". 
-        # For single transcript gene, if any of constitutive intron bins in 5' UTR, it will have attribute "five_UTR_constitutive_introns" 
-        # (value would be like "001,002", list the region numbers); similarly for 3' UTR.
         gene_region_features = []
         for gene_id in list(gene_region.keys()):
                 iv = gene_region[gene_id]
@@ -382,12 +783,9 @@ def run(args):
                 feature.attr["gene_region_length"] = gene_region_length[gene_id]
                 feature.attr["constitutive_exonic_region_length"] = gene_constitutive_exons_length[gene_id]
                 feature.attr["constitutive_intronic_region_length"] = gene_constitutive_introns_length[gene_id]
+                feature.attr["constitutive_intronic_region_effective_length"] = gene_constitutive_introns_effective_length[gene_id]
                 feature.attr["constitutive_exonic_region_number"] = gene_constitutive_exons_number[gene_id]
                 feature.attr["constitutive_intronic_region_number"] = gene_constitutive_introns_number[gene_id]
-                if gene_id in list(five_UTR_constitutive_introns.keys()):
-                        feature.attr["five_UTR_constitutive_introns"] = ",".join(five_UTR_constitutive_introns[gene_id])
-                if gene_id in list(three_UTR_constitutive_introns.keys()):
-                        feature.attr["three_UTR_constitutive_introns"] = ",".join(three_UTR_constitutive_introns[gene_id])
                 gene_region_features.append(feature)
                 
         gene_region_features.sort( key = lambda f: ( f.iv.chrom, f.iv.start ) )
@@ -404,39 +802,6 @@ def run(args):
                         feature.attr["gene_id"] = gene_id
                         feature.attr["transcript_id"] = transcript_id
                         transcript_region_features[gene_id].append(feature)
-                        
-        CDS_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in list(CDS_region.keys()):
-                for transcript_id in list(CDS_region[gene_id].keys()):
-                        iv = CDS_region[gene_id][transcript_id]
-                        feature = HTSeq.GenomicFeature(gene_id, "CDS_region", iv)
-                        feature.source = "IR_annotation"
-                        feature.attr = {}
-                        feature.attr["gene_id"] = gene_id
-                        feature.attr["transcript_id"] = transcript_id
-                        CDS_region_features[gene_id].append(feature)    
-                        
-        five_UTR_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in list(five_UTR_region.keys()):
-                for transcript_id in list(five_UTR_region[gene_id].keys()):
-                        iv = five_UTR_region[gene_id][transcript_id]
-                        feature = HTSeq.GenomicFeature(gene_id, "five_UTR_region", iv)
-                        feature.source = "IR_annotation"
-                        feature.attr = {}
-                        feature.attr["gene_id"] = gene_id
-                        feature.attr["transcript_id"] = transcript_id
-                        five_UTR_region_features[gene_id].append(feature)   
-                        
-        three_UTR_region_features = collections.defaultdict( lambda: list() )
-        for gene_id in list(three_UTR_region.keys()):
-                for transcript_id in list(three_UTR_region[gene_id].keys()):
-                        iv = three_UTR_region[gene_id][transcript_id]
-                        feature = HTSeq.GenomicFeature(gene_id, "three_UTR_region", iv)
-                        feature.source = "IR_annotation"
-                        feature.attr = {}
-                        feature.attr["gene_id"] = gene_id
-                        feature.attr["transcript_id"] = transcript_id
-                        three_UTR_region_features[gene_id].append(feature)           
         
         # Write all newly defined features into new gtf annotation file.
         logging.info("Writing annotation to file: %s" % os.path.join(args.outdir, args.annofile))
@@ -448,15 +813,6 @@ def run(args):
                 
                 for feature in transcript_region_features[gene_id]:
                         f.write( feature.get_gff_line() )
-                        
-                for feature in CDS_region_features[gene_id]:
-                        f.write( feature.get_gff_line() ) 
-                        
-                for feature in five_UTR_region_features[gene_id]:
-                        f.write( feature.get_gff_line() )   
-                        
-                for feature in three_UTR_region_features[gene_id]:
-                        f.write( feature.get_gff_line() )                  
                 
                 for feature in gene_exons_bins[gene_id]:
                         f.write( feature.get_gff_line() )
