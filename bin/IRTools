@@ -68,7 +68,7 @@ def prepare_argparser():
         """
         Prepare optparser object. New options will be added in this function first.
         """
-        description = "%(prog)s -- a computational toolset for detection and analysis of intron retention (IR) from RNA-Seq libraries"
+        description = "%(prog)s -- a computational toolset for detection and analysis of intron retention (IR) and read-through (RT) from RNA-Seq libraries"
         epilog = "For command line options of each command, type: %(prog)s COMMAND -h"
         # top-level parser
         argparser = ap.ArgumentParser( description = description, epilog = epilog )
@@ -96,7 +96,7 @@ def add_annotation_parser( subparsers ):
         """
         Add main function 'annotation' argument parsers.
         """
-        argparser_annotation = subparsers.add_parser("annotation", help="Generate annotation GTF file for intron retention analysis.")
+        argparser_annotation = subparsers.add_parser("annotation", help="Generate annotation GTF/GFF3-derived file for intron retention and read-through analysis.")
 
         # group for input files
         group_general = argparser_annotation.add_argument_group( "general arguments" )
@@ -105,6 +105,16 @@ def add_annotation_parser( subparsers ):
         
         group_general.add_argument( "-o", "--annotation-file", dest = "annofile", type = str, required = True,
                                     help = "Output annotation GTF file. REQUIRED.")
+        group_general.add_argument( "-u", "--map-file", dest = "mapfile", type = str,
+                                  help = "Optional mappability resource for annotation-time IRI preprocessing. Provide a local bigWig/BED file, or specify a supported genome shortcut (hg19, hg38, mm9, mm10, mm11).")
+        group_general.add_argument( "--map-read-length", dest = "mapreadlength", type = int, choices = (24, 36, 50, 100),
+                                  help = "Read length used when resolving a species shortcut passed to --map-file. DEFAULT: 50.",
+                                  default = 50)
+        group_general.add_argument( "--map-cutoff", dest = "mapcutoff", type = float,
+                                  help = "Mappability cutoff used to define low-mappability intervals. DEFAULT: 0.1.",
+                                  default = 0.1)
+        group_general.add_argument( "--map-cache-dir", dest = "mapcachedir", type = str,
+                                  help = "Optional writable directory for generated low-mappability BED cache files. Default: IRTools/data/mappability_cache inside the installed package.")
         group_general.add_argument("--outdir", dest = "outdir", type = str, default = '',
                                    help = "If specified, all output files will be written to that directory. Default: the current working directory") 
 
@@ -115,12 +125,12 @@ def add_quant_parser( subparsers ):
         """
         Add main function 'quant' argument parsers.
         """
-        argparser_quant = subparsers.add_parser("quant", help="Quantify intron retention with two complementary metrics: intron retention index (IRI), and intron retention coefficient (IRC).")
+        argparser_quant = subparsers.add_parser("quant", help="Quantify intron retention or read-through with IRI, IRC, or RT.")
 
         # group for general arguments
         group_general = argparser_quant.add_argument_group( "general arguments" )
-        group_general.add_argument( "-q", "--quant-type", dest = "quanttype", type = str, choices=("IRI", "IRC"),
-                                  help = "Intron retention (IR) quantifiation types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: \"IRI\".",
+        group_general.add_argument( "-q", "--quant-type", dest = "quanttype", type = str, choices=("IRI", "IRC", "RT"),
+                                  help = "Quantification types: intron retention index (IRI), intron retention coefficient (IRC), and read-through index (RT). DEFAULT: \"IRI\".",
                                   default = "IRI")        
         group_general.add_argument( "-i", "--alt-file", dest = "altfile", type = str, required = True,
                                   help = "Input RNA-Seq alignment file. The input file must be a BAM file.")
@@ -130,15 +140,8 @@ def add_quant_parser( subparsers ):
         group_general.add_argument( "-s", "--library-type", dest = "libtype", type = str, choices = ("fr-unstranded", "fr-firststrand", "fr-secondstrand"),
                                   help = "Library type. DEFAULT: \"fr-unstranded\" (unstranded). Use \"fr-firststrand\" or \"fr-secondstrand\" for strand-specific RNA-Seq libraries.",
                                   default = "fr-unstranded" )
-        group_general.add_argument( "-u", "--map-file", dest = "mapfile", type = str,
-                                  help = "Mappability score bigWig file (depends on species, sequence length of RNA-Seq library, etc). Or specify a species (i.e. hg19 or mm9) for which a default annotation file (default for 50 bps of single-end RNA-Seq library) can be downloaded and used." +
-                                         "If specified, mappability will take into account.")            
-
-        e_or_g_group = group_general.add_mutually_exclusive_group(required=True)
-        e_or_g_group.add_argument( "-e", "--species", dest = "species", type = str, choices = ("hg19", "mm9"),
-                                   help = "Specify a species for which built-in IR annotation GTF file can be used. -e and -g are mutually exclusive and one is required." )
-        e_or_g_group.add_argument( "-g", "--annotation-file", dest = "annofile", type = str,
-                                   help = "IR annotation GTF file built by \"IRTools annotation\" command. -e and -g are mutually exclusive and one is required." )
+        group_general.add_argument( "-g", "--annotation-file", dest = "annofile", type = str, required = True,
+                                   help = "IR annotation file built by \"IRTools annotation\", or a bundled genome shortcut such as hg19/mm9. If the value is an existing file path, that file is used. Otherwise IRTools looks for a bundled precomputed annotation for that genome name." )
         
         group_general.add_argument( "-n", "--name", dest = "name", type = str, required = True,
                                     help = "Sample name, which will be used to generate output file names. REQUIRED.")  
@@ -161,22 +164,25 @@ def add_diff_parser( subparsers ):
         """
         Add main function 'diff' argument parsers.
         """
-        argparser_diff = subparsers.add_parser("diff", help="Detection of intron retention change between two samples with replicates.")
+        argparser_diff = subparsers.add_parser("diff", help="Detection of intron retention or read-through change between two samples with replicates.")
 
         # group for general arguments
         group_general = argparser_diff.add_argument_group( "general arguments" )
-        group_general.add_argument( "-q", "--quant-type", dest = "quanttype", type = str, choices=("IRI", "IRC"),
-                                  help = "Intron retention (IR) quantification input types: intron retention index (IRI), intron retention coefficient (IRC). DEFAULT: \"IRI\".",
+        group_general.add_argument( "-q", "--quant-type", dest = "quanttype", type = str, choices=("IRI", "IRC", "RT"),
+                                  help = "Quantification input types: intron retention index (IRI), intron retention coefficient (IRC), and read-through index (RT). DEFAULT: \"IRI\".",
                                   default = "IRI")   
         group_general.add_argument("--indir", dest = "indir", type = str, default = '',
                                    help = "The directory containing the IR quantification result files to be analyzed. Default: the current working directory")
-        group_general.add_argument( "-s1", "--s1-files", dest = "s1files", type = str,
-                                    help = "A comma-separated list of names for each replicate in sample 1. IR quantification result files referenced by each name must be followed by the \".quant.{IRI,IRC}.{introns,genes,junctions}.txt\" extension." ) 
-        group_general.add_argument( "-s2", "--s2-files", dest = "s2files", type = str,
-                                    help = "A comma-separated list of names for each replicate in sample 2. IR quantification result files referenced by each name must be followed by the \".quant.{IRI,IRC}.{introns,genes,junctions}.txt\" extension." )
+        group_general.add_argument( "-s1", "--s1-files", dest = "s1files", type = str, required = True,
+                                    help = "A comma-separated list of sample or replicate names for group 1. Referenced result files must follow \".quant.IRI.{introns,genes}.txt\", \".quant.IRC.{introns,genes,junctions}.txt\", or \".quant.RT.genes.txt\" depending on -q." ) 
+        group_general.add_argument( "-s2", "--s2-files", dest = "s2files", type = str, required = True,
+                                    help = "A comma-separated list of sample or replicate names for group 2. Referenced result files must follow \".quant.IRI.{introns,genes}.txt\", \".quant.IRC.{introns,genes,junctions}.txt\", or \".quant.RT.genes.txt\" depending on -q." )
         group_general.add_argument( "-t", "--analysis-type", dest = "analysistype", type = str, choices = ("P", "U"),
                                   help = "Type of analysis performed. \"P\" is for paired replicates analysis and \"U\" is for unpaired replicates analysis. DEFAULT: \"U\".",
                                   default = "U" ) # Requires same sample size in each sample         
+        group_general.add_argument( "-m", "--method", dest = "method", type = str, choices = ("minus", "log2fc"),
+                                  help = "Method used for the reported change column. \"minus\" reports mean(S2) - mean(S1), and \"log2fc\" reports log2((mean(S2)+1e-6)/(mean(S1)+1e-6)). DEFAULT: \"minus\".",
+                                  default = "minus" )
 
         group_general.add_argument( "-n", "--name", dest = "name", type = str, required = True,
                                     help = "Sample name, which will be used to generate output file names. REQUIRED.")  

@@ -1,12 +1,14 @@
 import os
 import logging
-import re
 import collections
 import itertools
 import bisect
 import numpy as np
 import pandas as pd
 import HTSeq
+import pysam
+
+from IRTools._resources import annotation_input_path
 
 class IRC_quant(object): 
         def __init__(self, args):
@@ -14,6 +16,7 @@ class IRC_quant(object):
                 self.stranded = self.is_stranded(self.params['libtype'])
                 
                 self.gtffile = self.load_gtffile()
+                self.harmonize_gtffile_chromosomes()
                 
                 self.gene_id2iv = self.get_gene_iv()
                 self.valid_genes = set(self.gene_id2iv.keys())
@@ -22,7 +25,8 @@ class IRC_quant(object):
                 self.CJ_id2iv = self.get_CJ_iv()
                 
                 self.gene_CJ_database = self.summarize_gene_CJ()
-                self.gene_CIR_database, self.gene_CIR_associated_CJ_database = self.summarize_gene_CIR()
+                self.gene_CIR_database = self.summarize_gene_CIR()
+                self.CJ_candidate_region, self.CIR_candidate_region = self.init_candidate_regions_for_quant_IRC()
                 self.genes, self.gene_region, self.CER_region, self.gene_counts, self.CIR_counts, self.CJ_counts = self.init_GenomicArrayOfSets_and_Counter_for_quant_IRC()
                 
                 self.filter = True
@@ -35,13 +39,9 @@ class IRC_quant(object):
                         return False
                 
         def load_gtffile(self):
-                if self.params['species']:
-                        import pkg_resources
-                        annofile = pkg_resources.resource_filename('IRTools', "data/" + self.params['species'] + "_IR_annotation.gtf.gz")
-                        gtffile = HTSeq.GFF_Reader(annofile, end_included=True)
-                elif self.params['annofile']:
-                        self.valid_annofile(self.params['annofile'])
-                        gtffile = HTSeq.GFF_Reader(self.params['annofile'], end_included=True)   
+                with annotation_input_path(self.params['annofile']) as annofile:
+                        self.valid_annofile(str(annofile))
+                        gtffile = list(HTSeq.GFF_Reader(str(annofile), end_included=True))
                 return gtffile
                                           
         @staticmethod        
@@ -56,20 +56,81 @@ class IRC_quant(object):
         def iv_to_str(iv):
                 return iv.chrom + ':' + str(iv.start) + '-' + str(iv.end)                        
 
+        @staticmethod
+        def clean_attr_value(value):
+                if isinstance(value, str):
+                        return value.strip('"')
+                return value
+
+        def attr_value(self, feature, key):
+                return self.clean_attr_value(feature.attr[key])
+
+        def htseq_iv(self, iv):
+                if self.stranded:
+                        return iv
+                return HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, ".")
+
+        @staticmethod
+        def divide_or_nan(numerator, denominator):
+                if denominator == 0:
+                        return np.nan
+                return numerator * 1.0 / denominator
+
+        @staticmethod
+        def canonical_chrom_name(chrom):
+                return chrom[3:] if chrom.startswith("chr") else chrom
+
+        def harmonize_gtffile_chromosomes(self):
+                bam_chroms = self.get_bam_chromosomes()
+                if not bam_chroms:
+                        return
+
+                gtf_chroms = {feature.iv.chrom for feature in self.gtffile}
+                if gtf_chroms.intersection(bam_chroms):
+                        return
+
+                bam_chrom_by_canonical = {}
+                for chrom in bam_chroms:
+                        bam_chrom_by_canonical.setdefault(self.canonical_chrom_name(chrom), chrom)
+
+                canonical_overlap = {
+                        self.canonical_chrom_name(chrom)
+                        for chrom in gtf_chroms
+                        if self.canonical_chrom_name(chrom) in bam_chrom_by_canonical
+                }
+                if not canonical_overlap:
+                        return
+
+                remapped_features = 0
+                for feature in self.gtffile:
+                        bam_chrom = bam_chrom_by_canonical.get(self.canonical_chrom_name(feature.iv.chrom))
+                        if bam_chrom and bam_chrom != feature.iv.chrom:
+                                feature.iv.chrom = bam_chrom
+                                remapped_features += 1
+
+                logging.info(
+                        "Harmonized annotation chromosome names with BAM references for %i features",
+                        remapped_features,
+                )
+
+        def get_bam_chromosomes(self):
+                with pysam.AlignmentFile(self.params['altfile'], "rb") as bamfile:
+                        return set(bamfile.references)
+
         def get_gene_iv(self):
                 gene_id2iv = {}
                 for feature in self.gtffile:
-                        gene_id = feature.attr["gene_id"]
-                        if feature.type == "gene_region" and int(feature.attr["constitutive_exonic_region_length"]) != 0 and int(feature.attr["constitutive_intronic_region_length"]) != 0:
+                        gene_id = self.attr_value(feature, "gene_id")
+                        if feature.type == "gene_region" and int(self.attr_value(feature, "constitutive_exonic_region_length")) != 0 and int(self.attr_value(feature, "constitutive_intronic_region_length")) != 0:
                                 gene_id2iv[gene_id] = self.iv_to_str(feature.iv)
                 return gene_id2iv
         
         def get_CIR_iv(self):
                 CIR_id2iv = {}
                 for feature in self.gtffile:
-                        gene_id = feature.attr["gene_id"]
+                        gene_id = self.attr_value(feature, "gene_id")
                         if feature.type == "constitutive_intronic_region" and gene_id in self.valid_genes:
-                                CIR_number = feature.attr["constitutive_intronic_region_number"]
+                                CIR_number = self.attr_value(feature, "constitutive_intronic_region_number")
                                 CIR_id = gene_id + ':' + CIR_number
                                 CIR_id2iv[CIR_id] = self.iv_to_str(feature.iv)
                 return CIR_id2iv
@@ -77,10 +138,10 @@ class IRC_quant(object):
         def get_CJ_iv(self):
                 CJ_id2iv = {}
                 for feature in self.gtffile:
-                        gene_id = feature.attr["gene_id"]
+                        gene_id = self.attr_value(feature, "gene_id")
                         if feature.type == "constitutive_junction" and gene_id in self.valid_genes:
-                                CJ_number = feature.attr["constitutive_junction_number"]
-                                CJ_id = feature.attr['gene_id'] + ':' + CJ_number
+                                CJ_number = self.attr_value(feature, "constitutive_junction_number")
+                                CJ_id = gene_id + ':' + CJ_number
                                 CJ_id2iv[CJ_id] = self.iv_to_str(feature.iv) 
                 return CJ_id2iv
         
@@ -90,26 +151,63 @@ class IRC_quant(object):
         
         def summarize_gene_CJ(self):
                 gene_CJ_database = collections.defaultdict( lambda: {} )
+                overlap = self.params['minoverlap']
                 for feature in self.gtffile:
-                        gene_id = feature.attr["gene_id"]
+                        gene_id = self.attr_value(feature, "gene_id")
                         if feature.type == "constitutive_junction" and gene_id in self.valid_genes:
-                                CJ_number = feature.attr["constitutive_junction_number"]
+                                CJ_number = self.attr_value(feature, "constitutive_junction_number")
+                                junction_from_pos_list, junction_to_pos_list = self.get_junction_pos_list(feature, overlap)
+                                feature.attr["_junction_from_pos_list"] = junction_from_pos_list
+                                feature.attr["_junction_to_pos_list"] = junction_to_pos_list
                                 gene_CJ_database[gene_id][CJ_number] = feature
                 return gene_CJ_database
         
         def summarize_gene_CIR(self):
                 gene_CIR_database = collections.defaultdict( lambda: {} )
-                gene_CIR_associated_CJ_database = collections.defaultdict( lambda: collections.defaultdict( lambda: {} ))
                 for feature in self.gtffile:
-                        gene_id = feature.attr["gene_id"]
+                        gene_id = self.attr_value(feature, "gene_id")
                         if feature.type == "constitutive_intronic_region" and gene_id in self.valid_genes and self.CIR_has_both_upstream_and_downstream_CERs(feature):
-                                CIR_number = feature.attr["constitutive_intronic_region_number"]
+                                CIR_number = self.attr_value(feature, "constitutive_intronic_region_number")
                                 gene_CIR_database[gene_id][CIR_number] = feature
                                 
-                                upstream_CJ_number, downstream_CJ_number = feature.attr['upstream_constitutive_junction_number'], feature.attr['downstream_constitutive_junction_number']
-                                gene_CIR_associated_CJ_database[gene_id][CIR_number]['upstream_constitutive_junction'] = self.gene_CJ_database[gene_id][upstream_CJ_number]
-                                gene_CIR_associated_CJ_database[gene_id][CIR_number]['downstream_constitutive_junction'] = self.gene_CJ_database[gene_id][downstream_CJ_number] 
-                return gene_CIR_database, gene_CIR_associated_CJ_database
+                                upstream_CJ_number = self.attr_value(feature, 'upstream_constitutive_junction_number')
+                                downstream_CJ_number = self.attr_value(feature, 'downstream_constitutive_junction_number')
+                                upstream_CJ = self.gene_CJ_database[gene_id][upstream_CJ_number]
+                                downstream_CJ = self.gene_CJ_database[gene_id][downstream_CJ_number]
+                                overlap = self.params['minoverlap']
+                                if feature.iv.strand == "+":
+                                        feature.attr["_upstream_junction_from_pos"] = upstream_CJ.iv.start - 1
+                                        feature.attr["_upstream_junction_from_pos_list"] = list(range(feature.attr["_upstream_junction_from_pos"] - overlap + 1, feature.attr["_upstream_junction_from_pos"] + 1))
+                                        feature.attr["_downstream_junction_to_pos"] = downstream_CJ.iv.start
+                                        feature.attr["_downstream_junction_to_pos_list"] = list(range(feature.attr["_downstream_junction_to_pos"], feature.attr["_downstream_junction_to_pos"] + overlap))
+                                else:
+                                        feature.attr["_upstream_junction_from_pos"] = upstream_CJ.iv.start + 1
+                                        feature.attr["_upstream_junction_from_pos_list"] = list(range(feature.attr["_upstream_junction_from_pos"], feature.attr["_upstream_junction_from_pos"] + overlap))
+                                        feature.attr["_downstream_junction_to_pos"] = downstream_CJ.iv.start
+                                        feature.attr["_downstream_junction_to_pos_list"] = list(range(feature.attr["_downstream_junction_to_pos"] - overlap + 1, feature.attr["_downstream_junction_to_pos"] + 1))
+                return gene_CIR_database
+
+        def add_candidate_window(self, candidate_region, feature, pos_list, assignment):
+                iv = HTSeq.GenomicInterval(feature.iv.chrom, max(0, min(pos_list)), max(pos_list) + 1, feature.iv.strand)
+                candidate_region[self.htseq_iv(iv)] += assignment
+
+        def init_candidate_regions_for_quant_IRC(self):
+                CJ_candidate_region = HTSeq.GenomicArrayOfSets("auto", stranded=self.stranded)
+                CIR_candidate_region = HTSeq.GenomicArrayOfSets("auto", stranded=self.stranded)
+
+                for gene_id, database in self.gene_CJ_database.items():
+                        for CJ_number, feature in database.items():
+                                assignment = (gene_id, CJ_number)
+                                self.add_candidate_window(CJ_candidate_region, feature, feature.attr["_junction_from_pos_list"], assignment)
+                                self.add_candidate_window(CJ_candidate_region, feature, feature.attr["_junction_to_pos_list"], assignment)
+
+                for gene_id, database in self.gene_CIR_database.items():
+                        for CIR_number, feature in database.items():
+                                assignment = (gene_id, CIR_number)
+                                self.add_candidate_window(CIR_candidate_region, feature, feature.attr["_upstream_junction_from_pos_list"], assignment)
+                                self.add_candidate_window(CIR_candidate_region, feature, feature.attr["_downstream_junction_to_pos_list"], assignment)
+
+                return CJ_candidate_region, CIR_candidate_region
                                       
         def init_GenomicArrayOfSets_and_Counter_for_quant_IRC(self):
                 genes = HTSeq.GenomicArrayOfSets("auto", stranded=self.stranded)
@@ -120,22 +218,22 @@ class IRC_quant(object):
                 CIR_counts = collections.defaultdict( lambda:  collections.defaultdict( lambda:  collections.Counter() ))      
                 CJ_counts = collections.defaultdict( lambda:  collections.defaultdict( lambda:  collections.Counter() ))
                 for feature in self.gtffile:
-                        gene_id = feature.attr["gene_id"]
+                        gene_id = self.attr_value(feature, "gene_id")
                         if feature.type == "gene_region":
-                                gene_region[feature.iv] += gene_id
+                                gene_region[self.htseq_iv(feature.iv)] += gene_id
                         elif feature.type == "constitutive_exonic_region" and gene_id in self.valid_genes:
-                                CER_number = feature.attr["constitutive_exonic_region_number"]
-                                genes[feature.iv] += (gene_id, feature.type, CER_number)
-                                CER_region[feature.iv] += "constitutive_exonic_region"
+                                CER_number = self.attr_value(feature, "constitutive_exonic_region_number")
+                                genes[self.htseq_iv(feature.iv)] += (gene_id, feature.type, CER_number)
+                                CER_region[self.htseq_iv(feature.iv)] += "constitutive_exonic_region"
                         elif feature.type == "constitutive_intronic_region" and gene_id in self.valid_genes:
-                                CIR_number = feature.attr["constitutive_intronic_region_number"]
-                                genes[feature.iv] += (gene_id, feature.type, CIR_number)
+                                CIR_number = self.attr_value(feature, "constitutive_intronic_region_number")
+                                genes[self.htseq_iv(feature.iv)] += (gene_id, feature.type, CIR_number)
                                 if self.CIR_has_both_upstream_and_downstream_CERs(feature):
                                         CIR_counts[gene_id][CIR_number]["CIR_5'retained_reads"] = 0
                                         CIR_counts[gene_id][CIR_number]["CIR_3'retained_reads"] = 0
                                         CIR_counts[gene_id][CIR_number]["CIR_spliced_reads"] = 0                                        
                         elif feature.type == "constitutive_junction" and gene_id in self.valid_genes:
-                                CJ_number = feature.attr["constitutive_junction_number"]
+                                CJ_number = self.attr_value(feature, "constitutive_junction_number")
                                 CJ_counts[gene_id][CJ_number]["CJ_retained_reads"] = 0
                                 CJ_counts[gene_id][CJ_number]["CJ_spliced_reads"] = 0                                
                                 
@@ -158,7 +256,7 @@ class IRC_quant(object):
          
         @staticmethod
         def unique_aligned(alt):
-                return True if dict(alt.optional_fields).get("NH", 1) == 1 else False
+                return True if (alt.get_tag("NH") if alt.has_tag("NH") else 1) == 1 else False
         
         @staticmethod
         # iv's strand will be reversed.
@@ -169,29 +267,63 @@ class IRC_quant(object):
                         iv_reversed = HTSeq.GenomicInterval(iv.chrom, iv.start, iv.end, "+")
                 return iv_reversed        
         
+        def read_blocks_to_intervals(self, alt):
+                strand = "-" if alt.is_reverse else "+"
+                return [
+                        HTSeq.GenomicInterval(alt.reference_name, start, end, strand)
+                        for start, end in alt.get_blocks()
+                        if end > start
+                ]
+
         def get_alt_iv(self, alt):
                 libtype = self.params['libtype']
+                read_intervals = self.read_blocks_to_intervals(alt)
                 if libtype == "fr-secondstrand" or libtype == "fr-unstranded":
-                        alt_iv_seq = [ co.ref_iv for co in alt.cigar if co.type == "M" and co.size > 0 ]
+                        alt_iv_seq = read_intervals
                 elif libtype == "fr-firststrand":
-                        alt_iv_seq = [ self.reverse_strand(co.ref_iv) for co in alt.cigar if co.type == "M" and co.size > 0 ]   
+                        alt_iv_seq = [ self.reverse_strand(iv) for iv in read_intervals ]
                 return alt_iv_seq
         
         def get_pair_alt_iv(self, alt1, alt2):
                 libtype = self.params['libtype']
+                alt1_intervals = self.read_blocks_to_intervals(alt1)
+                alt2_intervals = self.read_blocks_to_intervals(alt2)
                 if libtype == "fr-secondstrand" or libtype == "fr-unstranded":
-                        alt_iv_seq1 = [ co.ref_iv for co in alt1.cigar if co.type == "M" and co.size > 0 ]
-                        alt_iv_seq2 = [ self.reverse_strand(co.ref_iv) for co in alt2.cigar if co.type == "M" and co.size > 0 ]
+                        alt_iv_seq1 = alt1_intervals
+                        alt_iv_seq2 = [ self.reverse_strand(iv) for iv in alt2_intervals ]
                 elif libtype == "fr-firststrand":
-                        alt_iv_seq1 = [ self.reverse_strand(co.ref_iv) for co in alt1.cigar if co.type == "M" and co.size > 0 ]  
-                        alt_iv_seq2 = [ co.ref_iv for co in alt2.cigar if co.type == "M" and co.size > 0 ] 
+                        alt_iv_seq1 = [ self.reverse_strand(iv) for iv in alt1_intervals ]
+                        alt_iv_seq2 = alt2_intervals
                 return alt_iv_seq1, alt_iv_seq2      
+
+        def iter_single_reads(self):
+                with pysam.AlignmentFile(self.params['altfile'], "rb") as bamfile:
+                        for alt in bamfile.fetch(until_eof=True):
+                                yield alt
+
+        def iter_paired_reads(self):
+                pending_reads = {}
+                with pysam.AlignmentFile(self.params['altfile'], "rb") as bamfile:
+                        for alt in bamfile.fetch(until_eof=True):
+                                if not alt.is_paired:
+                                        continue
+                                mate = pending_reads.pop(alt.query_name, None)
+                                if mate is None:
+                                        pending_reads[alt.query_name] = alt
+                                        continue
+
+                                if alt.is_read1:
+                                        yield alt, mate
+                                elif mate.is_read1:
+                                        yield mate, alt
+                                else:
+                                        yield mate, alt
         
         def is_read_in_gene_region(self, alt_iv_seq):
                 iset_intersection = None
                 iset_union = None                                        
                 for alt_iv in alt_iv_seq:			
-                        for iv, gene_step_set in self.gene_region[alt_iv].steps():
+                        for iv, gene_step_set in self.gene_region[self.htseq_iv(alt_iv)].steps():
                                 if iset_intersection is None:
                                         iset_intersection = gene_step_set.copy()
                                 else:
@@ -215,7 +347,7 @@ class IRC_quant(object):
         def is_read_in_CIR_or_CER(self, alt_iv_seq):
                 iset_union = None
                 for alt_iv in alt_iv_seq:			
-                        for iv, step_set in self.genes[alt_iv].steps():
+                        for iv, step_set in self.genes[self.htseq_iv(alt_iv)].steps():
                                 gene_step_set = self.set_sorted_in_feature(step_set, 0)					
                                 if iset_union is None:
                                         iset_union = gene_step_set.copy()
@@ -226,8 +358,60 @@ class IRC_quant(object):
         
         def read_associated_gene(self, alt_iv_seq):
                 for alt_iv in alt_iv_seq:			
-                        for iv, gene_step_set in self.gene_region[alt_iv].steps():
+                        for iv, gene_step_set in self.gene_region[self.htseq_iv(alt_iv)].steps():
                                 return list(gene_step_set)[0]
+
+        def collect_read_gene(self, alt_iv_seq):
+                gene_intersection = None
+                gene_union = None
+                feature_gene_union = None
+
+                for alt_iv in alt_iv_seq:
+                        htseq_alt_iv = self.htseq_iv(alt_iv)
+                        for iv, gene_step_set in self.gene_region[htseq_alt_iv].steps():
+                                if gene_intersection is None:
+                                        gene_intersection = gene_step_set.copy()
+                                else:
+                                        gene_intersection.intersection_update(gene_step_set)
+                                if gene_union is None:
+                                        gene_union = gene_step_set.copy()
+                                else:
+                                        gene_union.update(gene_step_set)
+
+                        for iv, step_set in self.genes[htseq_alt_iv].steps():
+                                gene_step_set = self.set_sorted_in_feature(step_set, 0)
+                                if feature_gene_union is None:
+                                        feature_gene_union = gene_step_set.copy()
+                                else:
+                                        feature_gene_union.update(gene_step_set)
+
+                if gene_intersection is None or gene_union is None or feature_gene_union is None:
+                        return None
+
+                if len(gene_intersection) != 1 or len(gene_union) != 1 or gene_intersection != gene_union:
+                        return None
+
+                if len(feature_gene_union) != 1 or feature_gene_union != gene_union:
+                        return None
+
+                return next(iter(gene_union))
+
+        def collect_candidate_features(self, alt_iv_seq, gene_id):
+                CJ_keys = set()
+                CIR_keys = set()
+
+                for alt_iv in alt_iv_seq:
+                        htseq_alt_iv = self.htseq_iv(alt_iv)
+                        for iv, step_set in self.CJ_candidate_region[htseq_alt_iv].steps():
+                                for candidate_gene_id, CJ_number in step_set:
+                                        if candidate_gene_id == gene_id:
+                                                CJ_keys.add(CJ_number)
+                        for iv, step_set in self.CIR_candidate_region[htseq_alt_iv].steps():
+                                for candidate_gene_id, CIR_number in step_set:
+                                        if candidate_gene_id == gene_id:
+                                                CIR_keys.add(CIR_number)
+
+                return CJ_keys, CIR_keys
                         
         @staticmethod
         def get_junction_pos_list(junction, overlap):
@@ -290,14 +474,12 @@ class IRC_quant(object):
                                 break     
                 return flag
                                 
-        def assign_read_to_CJ(self, alt_iv_seq, CJ):     
-                gene_id, gene_chrom, gene_strand = CJ.attr["gene_id"], CJ.iv.chrom, CJ.iv.strand
-                CJ_number, CJ_type = CJ.attr["constitutive_junction_number"], CJ.attr["constitutive_junction_type"]
+        def assign_read_to_CJ(self, start_list, end_list, CJ):     
+                gene_id, gene_chrom, gene_strand = self.attr_value(CJ, "gene_id"), CJ.iv.chrom, CJ.iv.strand
+                CJ_number, CJ_type = self.attr_value(CJ, "constitutive_junction_number"), self.attr_value(CJ, "constitutive_junction_type")
                 overlap = self.params['minoverlap']
-                
-                start_list, end_list = self.generate_bisect_list(alt_iv_seq)
-                
-                junction_from_pos_list, junction_to_pos_list = self.get_junction_pos_list(CJ, overlap)
+                junction_from_pos_list = CJ.attr["_junction_from_pos_list"]
+                junction_to_pos_list = CJ.attr["_junction_to_pos_list"]
                 junction_from_pos_index = self.find_pos_in_bisect_list(junction_from_pos_list, start_list, end_list)
                 junction_to_pos_index = self.find_pos_in_bisect_list(junction_to_pos_list, start_list, end_list)              
                 
@@ -368,28 +550,12 @@ class IRC_quant(object):
                                 if self.is_spliced_read_entirely_in_CER(alt_prev_pos_list):
                                         self.CJ_counts[gene_id][CJ_number]["CJ_spliced_reads"] += 1 
                                         
-        def assign_read_to_CIR(self, alt_iv_seq, CIR):
-                gene_id, gene_chrom, gene_strand, CIR_number = CIR.attr["gene_id"], CIR.iv.chrom, CIR.iv.strand, CIR.attr["constitutive_intronic_region_number"]
-                upstream_CJ = self.gene_CIR_associated_CJ_database[gene_id][CIR_number]['upstream_constitutive_junction']
-                downstream_CJ = self.gene_CIR_associated_CJ_database[gene_id][CIR_number]['downstream_constitutive_junction']
-                overlap = self.params['minoverlap']   
-                
-                start_list, end_list = self.generate_bisect_list(alt_iv_seq)
-                
-                if gene_strand == "+":
-                        upstream_junction_from_pos = upstream_CJ.iv.start - 1
-                        upstream_junction_from_pos_list = list(range(upstream_junction_from_pos - overlap + 1, upstream_junction_from_pos + 1))
-                        
-                        downstream_junction_to_pos = downstream_CJ.iv.start
-                        downstream_junction_to_pos_list = list(range(downstream_junction_to_pos, downstream_junction_to_pos + overlap))
-                        
-                elif gene_strand == "-":
-                        upstream_junction_from_pos = upstream_CJ.iv.start + 1
-                        upstream_junction_from_pos_list = list(range(upstream_junction_from_pos, upstream_junction_from_pos + overlap))
-                        
-                        downstream_junction_to_pos = downstream_CJ.iv.start
-                        downstream_junction_to_pos_list = list(range(downstream_junction_to_pos - overlap + 1, downstream_junction_to_pos + 1))   
-                        
+        def assign_read_to_CIR(self, start_list, end_list, CIR):
+                gene_id, gene_chrom, gene_strand, CIR_number = self.attr_value(CIR, "gene_id"), CIR.iv.chrom, CIR.iv.strand, self.attr_value(CIR, "constitutive_intronic_region_number")
+                upstream_junction_from_pos = CIR.attr["_upstream_junction_from_pos"]
+                upstream_junction_from_pos_list = CIR.attr["_upstream_junction_from_pos_list"]
+                downstream_junction_to_pos = CIR.attr["_downstream_junction_to_pos"]
+                downstream_junction_to_pos_list = CIR.attr["_downstream_junction_to_pos_list"]
                 upstream_junction_from_pos_index = self.find_pos_in_bisect_list(upstream_junction_from_pos_list, start_list, end_list)
                 downstream_junction_to_pos_index = self.find_pos_in_bisect_list(downstream_junction_to_pos_list, start_list, end_list)
                         
@@ -417,33 +583,34 @@ class IRC_quant(object):
                 
                 logging.info("Counting number of retained reads and spliced reads for each constitutive junction (CJ) and constitutive intronic region (CIR)")                        
                 
-                bamfile = HTSeq.BAM_Reader(self.params['altfile'])
                 if self.params['readtype'] == "single":
-                        for alt in bamfile:
+                        for alt in self.iter_single_reads():
                                 # Consider the alignments that are aligned and uniquely mapped.
-                                if alt.aligned and self.unique_aligned(alt) and re.match('chr', alt.iv.chrom):                                              
-                                        alt_iv_seq = self.get_alt_iv(alt)    
-                                        if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):                                             
-                                                gene_id = self.read_associated_gene(alt_iv_seq)
-                                                for CJ in list(self.gene_CJ_database[gene_id].values()):
-                                                        self.assign_read_to_CJ(alt_iv_seq, CJ)
-                                                for CIR in list(self.gene_CIR_database[gene_id].values()):
-                                                        self.assign_read_to_CIR(alt_iv_seq, CIR)
+                                if (not alt.is_unmapped) and self.unique_aligned(alt):                                              
+                                        alt_iv_seq = self.get_alt_iv(alt)
+                                        gene_id = self.collect_read_gene(alt_iv_seq)
+                                        if gene_id:
+                                                start_list, end_list = self.generate_bisect_list(alt_iv_seq)
+                                                CJ_keys, CIR_keys = self.collect_candidate_features(alt_iv_seq, gene_id)
+                                                for CJ_number in CJ_keys:
+                                                        self.assign_read_to_CJ(start_list, end_list, self.gene_CJ_database[gene_id][CJ_number])
+                                                for CIR_number in CIR_keys:
+                                                        self.assign_read_to_CIR(start_list, end_list, self.gene_CIR_database[gene_id][CIR_number])
                                                         
                 elif self.params['readtype'] == "paired":
-                        for alt_first, alt_second in HTSeq.pair_SAM_alignments(bamfile):
-                                if alt_first == None or alt_second == None:
-                                        continue
-                                if alt_first.aligned and self.unique_aligned(alt_first) and alt_second.aligned and self.unique_aligned(alt_second) and alt_first.iv.chrom == alt_second.iv.chrom and re.match('chr', alt_first.iv.chrom) and re.match('chr', alt_second.iv.chrom):
+                        for alt_first, alt_second in self.iter_paired_reads():
+                                if (not alt_first.is_unmapped) and self.unique_aligned(alt_first) and (not alt_second.is_unmapped) and self.unique_aligned(alt_second) and alt_first.reference_name == alt_second.reference_name:
                                         alt_first_iv_seq, alt_second_iv_seq = self.get_pair_alt_iv(alt_first, alt_second)
                                         alt_iv_seq = self.combine_pair_iv_seq(alt_first_iv_seq, alt_second_iv_seq)
                                         
-                                        if self.is_read_in_gene_region(alt_iv_seq) and self.is_read_in_CIR_or_CER(alt_iv_seq):   
-                                                gene_id = self.read_associated_gene(alt_iv_seq)
-                                                for CJ in list(self.gene_CJ_database[gene_id].values()):
-                                                        self.assign_read_to_CJ(alt_iv_seq, CJ)
-                                                for CIR in list(self.gene_CIR_database[gene_id].values()):
-                                                        self.assign_read_to_CIR(alt_iv_seq, CIR)
+                                        gene_id = self.collect_read_gene(alt_iv_seq)
+                                        if gene_id:
+                                                start_list, end_list = self.generate_bisect_list(alt_iv_seq)
+                                                CJ_keys, CIR_keys = self.collect_candidate_features(alt_iv_seq, gene_id)
+                                                for CJ_number in CJ_keys:
+                                                        self.assign_read_to_CJ(start_list, end_list, self.gene_CJ_database[gene_id][CJ_number])
+                                                for CIR_number in CIR_keys:
+                                                        self.assign_read_to_CIR(start_list, end_list, self.gene_CIR_database[gene_id][CIR_number])
                                                         
         @staticmethod
         def get_quantile_index(read_count_qantile_list, read_count):
@@ -464,25 +631,42 @@ class IRC_quant(object):
         def apply_5_3_unbalanced_filter(self, df, outlier=0.01):
                 logging.info("Appling filter to remove fake intron retention events")
                 
+                df = df.copy()
                 df["gene_id"] = df.CIR_id.str[:-4]
                 df["CIR_number"] = df.CIR_id.str[-3:]
                 
                 df["CIR_retained_reads"] = df["CIR_5'retained_reads"] + df["CIR_3'retained_reads"]
                 df["5_percentage"] = df["CIR_5'retained_reads"] / df["CIR_retained_reads"]
                 df["3_percentage"] = df["CIR_3'retained_reads"] / df["CIR_retained_reads"]
-                df["max_percentage"] = df.apply(lambda row: max(row["5_percentage"], row["3_percentage"]), axis=1)       
+                df["max_percentage"] = df[["5_percentage", "3_percentage"]].max(axis=1)
                 
                 try:
                         read_count_qantile_list = []
                         filter_cutoff_quantile_list = []
+                        positive_retained_df = df[df.CIR_retained_reads > 0]
                         for q in [0, 25, 50, 75]:
-                                lower, upper = np.percentile(df[df.CIR_retained_reads > 0].CIR_retained_reads, q), np.percentile(df[df.CIR_retained_reads > 0].CIR_retained_reads, q+25)
+                                lower = np.percentile(positive_retained_df.CIR_retained_reads, q)
+                                upper = np.percentile(positive_retained_df.CIR_retained_reads, q+25)
                                 max_percentage_cutoff = np.percentile(df.loc[(df.CIR_retained_reads > lower) & (df.CIR_retained_reads <= upper), 'max_percentage'], (1 - outlier) * 100)
                                 
                                 read_count_qantile_list.append(lower)
                                 filter_cutoff_quantile_list.append(max_percentage_cutoff)
-                        
-                        df['intron_IRC'] = df.apply(lambda row: self.empirical_filter(row, read_count_qantile_list, filter_cutoff_quantile_list), axis=1)
+
+                        retained_reads = df["CIR_retained_reads"].to_numpy()
+                        max_percentage = df["max_percentage"].to_numpy()
+                        intron_irc = df["intron_IRC"].astype(object).to_numpy(copy=True)
+                        threshold_indexes = np.searchsorted(np.array(read_count_qantile_list), retained_reads, side="right") - 1
+                        threshold_indexes = np.clip(threshold_indexes, 0, len(filter_cutoff_quantile_list) - 1)
+                        cutoff_array = np.array(filter_cutoff_quantile_list, dtype=float)[threshold_indexes]
+
+                        eligible_mask = retained_reads > 0
+                        filtered_mask = eligible_mask & (max_percentage > cutoff_array)
+                        five_mask = filtered_mask & np.isclose(max_percentage, df["5_percentage"].to_numpy(), equal_nan=False)
+                        three_mask = filtered_mask & ~five_mask & np.isclose(max_percentage, df["3_percentage"].to_numpy(), equal_nan=False)
+
+                        intron_irc[five_mask] = "NA (5'AS)"
+                        intron_irc[three_mask] = "NA (3'AS)"
+                        df["intron_IRC"] = intron_irc
                         
                         self.filtered_CIR_id_list = list(df[df.intron_IRC.isin(["NA (5'AS)", "NA (3'AS)"])].CIR_id)  
                 except IndexError:
@@ -499,11 +683,11 @@ class IRC_quant(object):
                 for gene_id in sorted(self.CJ_counts.keys()):
                         for CJ_number in sorted(self.CJ_counts[gene_id].keys()):
                                 CJ_id = gene_id + ":" + CJ_number
-                                CJ_type = self.gene_CJ_database[gene_id][CJ_number].attr["constitutive_junction_type"]
+                                CJ_type = self.attr_value(self.gene_CJ_database[gene_id][CJ_number], "constitutive_junction_type")
                                 CJ_retained_reads = self.CJ_counts[gene_id][CJ_number]["CJ_retained_reads"]
                                 CJ_spliced_reads = self.CJ_counts[gene_id][CJ_number]["CJ_spliced_reads"]                               
                                 
-                                junction_IRC = np.divide(CJ_retained_reads * 1.0, CJ_retained_reads + CJ_spliced_reads)
+                                junction_IRC = self.divide_or_nan(CJ_retained_reads, CJ_retained_reads + CJ_spliced_reads)
                                 
                                 IRC_junction_level_dict = {"CJ_id": CJ_id,
                                                            "CJ_iv": self.CJ_id2iv[CJ_id],
@@ -528,13 +712,14 @@ class IRC_quant(object):
                 for gene_id in sorted(self.CIR_counts.keys()):
                         for CIR_number in sorted(self.CIR_counts[gene_id].keys()):
                                 CIR_id = gene_id + ":" + CIR_number
-                                upstream_CJ_number = self.gene_CIR_database[gene_id][CIR_number].attr["upstream_constitutive_junction_number"]
-                                downstream_CJ_number = self.gene_CIR_database[gene_id][CIR_number].attr["downstream_constitutive_junction_number"]
+                                upstream_CJ_number = self.attr_value(self.gene_CIR_database[gene_id][CIR_number], "upstream_constitutive_junction_number")
+                                downstream_CJ_number = self.attr_value(self.gene_CIR_database[gene_id][CIR_number], "downstream_constitutive_junction_number")
                                 CIR_five_retained_reads = self.CIR_counts[gene_id][CIR_number]["CIR_5'retained_reads"] = self.CJ_counts[gene_id][upstream_CJ_number]["CJ_retained_reads"]
                                 CIR_three_retained_reads = self.CIR_counts[gene_id][CIR_number]["CIR_3'retained_reads"] = self.CJ_counts[gene_id][downstream_CJ_number]["CJ_retained_reads"]
                                 
                                 CIR_spliced_reads = self.CIR_counts[gene_id][CIR_number]["CIR_spliced_reads"]                                
-                                intron_IRC = np.divide((CIR_five_retained_reads + CIR_three_retained_reads) / 2.0, (CIR_five_retained_reads + CIR_three_retained_reads) / 2.0 + CIR_spliced_reads)
+                                mean_retained_reads = (CIR_five_retained_reads + CIR_three_retained_reads) / 2.0
+                                intron_IRC = self.divide_or_nan(mean_retained_reads, mean_retained_reads + CIR_spliced_reads)
                                                                 
                                 IRC_intron_level_dict = {"CIR_id": CIR_id,
                                                          "CIR_iv": self.CIR_id2iv[CIR_id],
@@ -573,7 +758,7 @@ class IRC_quant(object):
                         gene_retained_reads = self.gene_counts["gene_retained_reads"][gene_id] = sum([(self.CIR_counts[gene_id][CIR_number]["CIR_5'retained_reads"] + self.CIR_counts[gene_id][CIR_number]["CIR_3'retained_reads"]) / 2.0 for CIR_number in list(self.CIR_counts[gene_id].keys())])
                         gene_spliced_reads = self.gene_counts["gene_spliced_reads"][gene_id] = sum([self.CIR_counts[gene_id][CIR_number]["CIR_spliced_reads"] for CIR_number in list(self.CIR_counts[gene_id].keys())])
                         
-                        gene_IRC = np.divide(gene_retained_reads * 1.0, gene_retained_reads + gene_spliced_reads)
+                        gene_IRC = self.divide_or_nan(gene_retained_reads, gene_retained_reads + gene_spliced_reads)
                         
                         IRC_gene_level_dict = {"gene_id": gene_id,
                                                "gene_iv": self.gene_id2iv[gene_id],
@@ -594,11 +779,30 @@ class IRC_quant(object):
                 total_retained_reads = sum(self.gene_counts["gene_retained_reads"].values())
                 total_spliced_reads = sum(self.gene_counts["gene_spliced_reads"].values())
                 total_reads = total_retained_reads + total_spliced_reads
-                
-                IRC_genome_wide = total_retained_reads * 1.0 / total_reads
+
+                if total_reads == 0:
+                        logging.warning("No eligible junction reads were counted for IRC quantification; reporting genome-wide statistics as NA.")
+                        IRC_genome_wide = np.nan
+                        retained_percentage = np.nan
+                        spliced_percentage = np.nan
+                else:
+                        IRC_genome_wide = total_retained_reads * 1.0 / total_reads
+                        retained_percentage = total_retained_reads * 100.0 / total_reads
+                        spliced_percentage = total_spliced_reads * 100.0 / total_reads
                 
                 logging.info("Genome-wide intron retention statistics of the library:")
-                print(("\tTotal retained reads: %i (%.2f%%)" % (total_retained_reads, total_retained_reads * 100.0 / total_reads)))
-                print(("\tTotal spliced reads: %i (%.2f%%)" % (total_spliced_reads, total_spliced_reads * 100.0 / total_reads)))
+                print(("\tTotal retained reads: %i (%.2f%%)" % (total_retained_reads, retained_percentage)))
+                print(("\tTotal spliced reads: %i (%.2f%%)" % (total_spliced_reads, spliced_percentage)))
                 print(("\tTotal junction reads (retained reads + spliced reads): %i" % (total_retained_reads + total_spliced_reads)))
                 print(("\tGenome-wide IRC: %f" % IRC_genome_wide))
+
+                self.IRC_genome_wide_stats = {
+                        "sample_name": self.params['name'],
+                        "Total retained reads": total_retained_reads,
+                        "Total spliced reads": total_spliced_reads,
+                        "Retained ratio": retained_percentage,
+                        "Spliced ratio": spliced_percentage,
+                        "Total junction reads": total_reads,
+                        "Genome-wide IRC": IRC_genome_wide,
+                }
+                return self.IRC_genome_wide_stats
