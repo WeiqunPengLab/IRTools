@@ -4,25 +4,39 @@
 # a replicate quant output are treated as 0 so replicate pairs stay
 # aligned. In unpaired mode, only observed rows are collected.
 
-import sys
-import os
+import csv
 import logging
-import re
-import pandas as pd
-import subprocess
-import collections
-import copy
-import networkx as nx
-import HTSeq
 import math
+import os
+import sys
 import warnings
-import scipy.stats
-import statsmodels.stats.multitest
 from statistics import mean
-from IRTools.quant_IRI import IRI_quant
-from IRTools.quant_IRC import IRC_quant
 
 LOG2FC_PSEUDOCOUNT = 1e-6
+
+DIFF_INPUT_SUFFIXES = {
+        "IRI": {
+                "introns": {
+                        "NGS": ".quant.IRI.introns.txt",
+                        "ONT": ".ont.IRI.introns.txt",
+                },
+                "genes": {
+                        "NGS": ".quant.IRI.genes.txt",
+                        "ONT": ".ont.IRI.genes.txt",
+                },
+        },
+        "IRC": {
+                "introns": {"NGS": ".quant.IRC.introns.txt"},
+                "genes": {"NGS": ".quant.IRC.genes.txt"},
+                "junctions": {"NGS": ".quant.IRC.junctions.txt"},
+        },
+        "RT": {
+                "genes": {
+                        "NGS": ".quant.RT.genes.txt",
+                        "ONT": ".ont.RT.genes.txt",
+                },
+        },
+}
 
 def parse_replicate_names(value):
         return [item.strip() for item in value.split(',') if item.strip()]
@@ -43,32 +57,82 @@ def validate_diff_replicates(args):
         args.s1files = ",".join(s1files)
         args.s2files = ",".join(s2files)
 
-def read_diff_metric_file(indir, sample_name, suffix, value_index, id_header):
-        file_path = os.path.join(indir, sample_name + suffix)
+def diff_input_suffixes(params, quant_type, level):
+        suffixes = DIFF_INPUT_SUFFIXES[quant_type][level]
+        input_format = params.get("inputformat", "auto")
+        if input_format == "auto":
+                return suffixes
+        if input_format not in suffixes:
+                raise ValueError("{} input is not supported for {} differential analysis.".format(input_format, quant_type))
+        return {input_format: suffixes[input_format]}
+
+def resolve_diff_metric_file(indir, sample_name, suffixes):
+        candidates = {
+                input_format: os.path.join(indir, sample_name + suffix)
+                for input_format, suffix in suffixes.items()
+        }
+        existing = [
+                (input_format, file_path)
+                for input_format, file_path in candidates.items()
+                if os.path.isfile(file_path)
+        ]
+        if not existing:
+                raise FileNotFoundError(
+                        "No quantification file found for sample '{}'. Expected one of: {}".format(
+                                sample_name,
+                                ", ".join(candidates.values()),
+                        )
+                )
+        if len(existing) > 1:
+                raise ValueError(
+                        "Both NGS and ONT files were found for sample '{}'. "
+                        "Use --input-format NGS or --input-format ONT.".format(sample_name)
+                )
+        return existing[0]
+
+def read_diff_metric_file(file_path, value_header, id_header):
         values = {}
-        with open(file_path, "r") as data:
-                for line in data:
-                        if line == "\n":
-                                continue
-                        fields = line.strip("\n").split()
-                        if not fields or fields[0] == id_header:
-                                continue
-                        if len(fields) <= value_index:
-                                raise ValueError("File {} does not have column index {} on line: {}".format(file_path, value_index, line.rstrip("\n")))
-                        values[fields[0]] = fields[value_index]
+        with open(file_path, "r", newline="") as data:
+                reader = csv.DictReader(data, delimiter="\t")
+                missing_headers = [
+                        header
+                        for header in (id_header, value_header)
+                        if header not in (reader.fieldnames or [])
+                ]
+                if missing_headers:
+                        raise ValueError(
+                                "File {} is missing required column(s): {}".format(
+                                        file_path,
+                                        ", ".join(missing_headers),
+                                )
+                        )
+                for row in reader:
+                        feature_id = row[id_header].strip()
+                        if feature_id:
+                                values[feature_id] = row[value_header].strip()
         return values
 
-def generate_diff_input_dict(params, suffix, value_index, id_header):
+def generate_diff_input_dict(params, quant_type, level, value_header, id_header):
         s1files = parse_replicate_names(params['s1files'])
         s2files = parse_replicate_names(params['s2files'])
-        s1_values_by_sample = {
-                sample_name: read_diff_metric_file(params['indir'], sample_name, suffix, value_index, id_header)
-                for sample_name in s1files
-        }
-        s2_values_by_sample = {
-                sample_name: read_diff_metric_file(params['indir'], sample_name, suffix, value_index, id_header)
-                for sample_name in s2files
-        }
+        suffixes = diff_input_suffixes(params, quant_type, level)
+        values_by_sample = {}
+        detected_formats = set()
+        for sample_name in dict.fromkeys(s1files + s2files):
+                input_format, file_path = resolve_diff_metric_file(params['indir'], sample_name, suffixes)
+                detected_formats.add(input_format)
+                values_by_sample[sample_name] = read_diff_metric_file(file_path, value_header, id_header)
+
+        if len(detected_formats) > 1:
+                raise ValueError(
+                        "NGS and ONT quantification files cannot be mixed in one differential analysis. "
+                        "Place them in separate directories or use --input-format."
+                )
+
+        detected_format = next(iter(detected_formats))
+        logging.info("Using %s %s %s quantification files", detected_format, quant_type, level)
+        s1_values_by_sample = {sample_name: values_by_sample[sample_name] for sample_name in s1files}
+        s2_values_by_sample = {sample_name: values_by_sample[sample_name] for sample_name in s2files}
 
         feature_ids = set()
         for values_by_sample in (s1_values_by_sample, s2_values_by_sample):
@@ -138,6 +202,8 @@ def change_column_name(base_name, params):
         return base_name + "_difference"
 
 def run_ttest(num_s1, num_s2, paired_mode):
+        import scipy.stats
+
         with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=RuntimeWarning)
                 if paired_mode:
@@ -176,6 +242,8 @@ def run_diff_analysis(input_dict, params):
                 pval_list.append(pval)
 
         if not descriptive_mode and pval_list:
+                import statsmodels.stats.multitest
+
                 fdr_bool_list, fdr_pval_list = statsmodels.stats.multitest.fdrcorrection(pval_list)
                 fdr_index = 0
                 for result in pending_results:
@@ -220,7 +288,9 @@ class IRI_diff(object):
         def generate_input_intron_level(self):
                 logging.info("Generating inputs for analysis for differential IR in intron level")
 
-                self.input_intron_dict = generate_diff_input_dict(self.params, ".quant.IRI.introns.txt", 8, "CIR_id")
+                self.input_intron_dict = generate_diff_input_dict(
+                        self.params, "IRI", "introns", "intron_IRI", "CIR_id"
+                )
 
                 input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRI.introns.txt")
                 input_file = open(input_file_path, "w")
@@ -234,7 +304,9 @@ class IRI_diff(object):
         def generate_input_gene_level(self):
                 logging.info("Generating inputs for analysis for differential IR in gene level")
 
-                self.input_gene_dict = generate_diff_input_dict(self.params, ".quant.IRI.genes.txt", 8, "gene_id")
+                self.input_gene_dict = generate_diff_input_dict(
+                        self.params, "IRI", "genes", "gene_IRI", "gene_id"
+                )
 
                 input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRI.genes.txt")
                 input_file = open(input_file_path, "w")
@@ -308,7 +380,9 @@ class IRC_diff(object):
         def generate_input_intron_level(self):
                 logging.info("Generating inputs for analysis for differential IR in intron level")
 
-                self.input_intron_dict = generate_diff_input_dict(self.params, ".quant.IRC.introns.txt", 5, "CIR_id")
+                self.input_intron_dict = generate_diff_input_dict(
+                        self.params, "IRC", "introns", "intron_IRC", "CIR_id"
+                )
 
                 input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRC.introns.txt")
                 input_file = open(input_file_path, "w")
@@ -322,7 +396,9 @@ class IRC_diff(object):
         def generate_input_gene_level(self):
                 logging.info("Generating inputs for analysis for differential IR in gene level")
 
-                self.input_gene_dict = generate_diff_input_dict(self.params, ".quant.IRC.genes.txt", 4, "gene_id")
+                self.input_gene_dict = generate_diff_input_dict(
+                        self.params, "IRC", "genes", "gene_IRC", "gene_id"
+                )
 
                 input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRC.genes.txt")
                 input_file = open(input_file_path, "w")
@@ -336,7 +412,9 @@ class IRC_diff(object):
         def generate_input_junction_level(self):
                 logging.info("Generating inputs for analysis for differential IR in junction level")
 
-                self.input_junction_dict = generate_diff_input_dict(self.params, ".quant.IRC.junctions.txt", 5, "CJ_id")
+                self.input_junction_dict = generate_diff_input_dict(
+                        self.params, "IRC", "junctions", "junction_IRC", "CJ_id"
+                )
 
                 input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.IRC.junctions.txt")
                 input_file = open(input_file_path, "w")
@@ -424,7 +502,9 @@ class RT_diff(object):
         def generate_input_gene_level(self):
                 logging.info("Generating inputs for analysis for differential RT in gene level")
 
-                self.input_gene_dict = generate_diff_input_dict(self.params, ".quant.RT.genes.txt", 10, "gene_id")
+                self.input_gene_dict = generate_diff_input_dict(
+                        self.params, "RT", "genes", "gene_RT_index", "gene_id"
+                )
 
                 input_file_path = os.path.join(self.temp_dir, self.params['name'] + ".diff.input.RT.genes.txt")
                 input_file = open(input_file_path, "w")

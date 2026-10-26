@@ -51,6 +51,15 @@ def main():
                 end_time = time.time()
                 print('-' * 50)
                 logging.info("Run complete: %s elapsed" % elapsed_time(start_time, end_time))
+        elif subcommand == "ont":
+                logging.info("Beginning IRTools ont run")
+                print('-' * 50)
+                start_time = time.time()
+                from IRTools.ont_cmd import run
+                run( args )
+                end_time = time.time()
+                print('-' * 50)
+                logging.info("Run complete: %s elapsed" % elapsed_time(start_time, end_time))
         elif subcommand == "diff":
                 logging.info("Beginning IRTools diff run")
                 print('-' * 50)
@@ -68,7 +77,7 @@ def prepare_argparser():
         """
         Prepare optparser object. New options will be added in this function first.
         """
-        description = "%(prog)s -- a computational toolset for detection and analysis of intron retention (IR) and read-through (RT) from RNA-Seq libraries"
+        description = "%(prog)s " + IRTools_VERSION + " -- a computational toolset for analysis of intron retention (IR) and read-through (RT) from short-read RNA-seq and ONT direct RNA-seq libraries"
         epilog = "For command line options of each command, type: %(prog)s COMMAND -h"
         # top-level parser
         argparser = ap.ArgumentParser( description = description, epilog = epilog )
@@ -80,6 +89,9 @@ def prepare_argparser():
 
         # command for 'quant'
         add_quant_parser( subparsers )
+
+        # command for 'ont'
+        add_ont_parser( subparsers )
         
         # command for 'diff'
         add_diff_parser( subparsers )
@@ -96,15 +108,15 @@ def add_annotation_parser( subparsers ):
         """
         Add main function 'annotation' argument parsers.
         """
-        argparser_annotation = subparsers.add_parser("annotation", help="Generate annotation GTF/GFF3-derived file for intron retention and read-through analysis.")
+        argparser_annotation = subparsers.add_parser("annotation", help="Generate annotation GTF/GFF3-derived file for intron retention and read-through analysis.", description="IRTools " + IRTools_VERSION + " -- build an intron retention and read-through annotation from GTF or GFF3.")
 
         # group for input files
         group_general = argparser_annotation.add_argument_group( "general arguments" )
         group_general.add_argument( "-g", "--GTF-file", dest = "inputfile", metavar = "GTFFILE", type = str, required = True,
-                                  help = "Input annotation GTF filename. REQUIRED." )
+                                  help = "Input annotation GTF or GFF3 filename. REQUIRED." )
         
         group_general.add_argument( "-o", "--annotation-file", dest = "annofile", type = str, required = True,
-                                    help = "Output annotation GTF file. REQUIRED.")
+                                    help = "Output IRTools annotation filename. REQUIRED.")
         group_general.add_argument( "-u", "--map-file", dest = "mapfile", type = str,
                                   help = "Optional mappability resource for annotation-time IRI preprocessing. Provide a local bigWig/BED file, or specify a supported genome shortcut (hg19, hg38, mm9, mm10, mm11).")
         group_general.add_argument( "--map-read-length", dest = "mapreadlength", type = int, choices = (24, 36, 50, 100),
@@ -125,7 +137,7 @@ def add_quant_parser( subparsers ):
         """
         Add main function 'quant' argument parsers.
         """
-        argparser_quant = subparsers.add_parser("quant", help="Quantify intron retention or read-through with IRI, IRC, or RT.")
+        argparser_quant = subparsers.add_parser("quant", help="Quantify intron retention or read-through with IRI, IRC, or RT.", description="IRTools " + IRTools_VERSION + " -- quantify short-read RNA-seq intron retention or read-through with IRI, IRC, or RT.")
 
         # group for general arguments
         group_general = argparser_quant.add_argument_group( "general arguments" )
@@ -133,7 +145,7 @@ def add_quant_parser( subparsers ):
                                   help = "Quantification types: intron retention index (IRI), intron retention coefficient (IRC), and read-through index (RT). DEFAULT: \"IRI\".",
                                   default = "IRI")        
         group_general.add_argument( "-i", "--alt-file", dest = "altfile", type = str, required = True,
-                                  help = "Input RNA-Seq alignment file. The input file must be a BAM file.")
+                                  help = "Input short-read RNA-seq BAM file, or a quoted wildcard pattern such as \"*.bam\".")
         group_general.add_argument( "-p", "--read-type", dest = "readtype", type = str, choices = ("paired", "single"),
                                   help = "\"paired\" is for paired-end RNA-Seq libraries and \"single\" is for single-end RNA-Seq libraries. DEFAULT: \"single\".",
                                   default = "single" )   
@@ -141,7 +153,7 @@ def add_quant_parser( subparsers ):
                                   help = "Library type. DEFAULT: \"fr-unstranded\" (unstranded). Use \"fr-firststrand\" or \"fr-secondstrand\" for strand-specific RNA-Seq libraries.",
                                   default = "fr-unstranded" )
         group_general.add_argument( "-g", "--annotation-file", dest = "annofile", type = str, required = True,
-                                   help = "IR annotation file built by \"IRTools annotation\", or a bundled genome shortcut such as hg19/mm9. If the value is an existing file path, that file is used. Otherwise IRTools looks for a bundled precomputed annotation for that genome name." )
+                                   help = "IR annotation file built by \"IRTools annotation\", or a bundled genome shortcut (hg38/mm39). If the value is an existing file path, that file is used. Otherwise IRTools looks for a bundled precomputed annotation for that genome name." )
         
         group_general.add_argument( "-n", "--name", dest = "name", type = str, required = True,
                                     help = "Sample name, which will be used to generate output file names. REQUIRED.")  
@@ -154,17 +166,59 @@ def add_quant_parser( subparsers ):
         # group for IRC specific arguments
         group_IRC = argparser_quant.add_argument_group( "IRC specific arguments" )
         group_IRC.add_argument( "-m", "--min_overlap", dest = "minoverlap", type = int,
-                                help = "Set when IR quantifiation type is \"IRC\". Minimum length of overlap between the reads and each of the exons or introns involved in splicing. DEFAULT: 8.",
+                                help = "Set when IR quantification type is \"IRC\". Minimum length of overlap between the reads and each of the exons or introns involved in splicing. DEFAULT: 8.",
                                 default = 8 )         
 
         return  
+
+
+def add_ont_parser( subparsers ):
+        """
+        Add main function 'ont' argument parsers.
+        """
+        argparser_ont = subparsers.add_parser("ont", help="Calculate intron retention or read-through from ONT direct RNA-seq splice-aware BAM alignments.", description="IRTools " + IRTools_VERSION + " -- quantify ONT direct RNA-seq intron retention (IRI) or read-through (RT) from splice-aware BAM alignments.")
+
+        group_general = argparser_ont.add_argument_group( "general arguments" )
+        group_general.add_argument( "-q", "--quant-type", dest = "quanttype", type = str, choices = ("IRI", "RT"),
+                                  help = "ONT quantification type: intron retention index (IRI) or read-through index (RT). DEFAULT: \"IRI\".",
+                                  default = "IRI" )
+        group_general.add_argument( "-i", "--alt-file", dest = "altfile", type = str, required = True,
+                                  help = "Input ONT direct RNA-seq alignment BAM file, or a wildcard pattern such as \"*.bam\". Alignments should be generated with a splice-aware aligner such as minimap2." )
+        group_general.add_argument( "-g", "--annotation-file", dest = "annofile", type = str, required = True,
+                                   help = "IR annotation file built by \"IRTools annotation\", or a bundled genome shortcut such as hg38/mm39." )
+        group_general.add_argument( "-s", "--library-type", dest = "libtype", type = str, choices = ("fr-unstranded", "fr-firststrand", "fr-secondstrand"),
+                                  help = "Library type. DEFAULT: \"fr-unstranded\". Use a stranded setting when the ONT BAM strand should be interpreted relative to transcript orientation.",
+                                  default = "fr-unstranded" )
+        group_general.add_argument( "-n", "--name", dest = "name", type = str, required = True,
+                                    help = "Sample name, which will be used to generate output file names. REQUIRED.")  
+        group_general.add_argument("--outdir", dest = "outdir", type = str, default = '',
+                                   help = "If specified, all output files will be written to that directory. Default: the current working directory") 
+
+        group_ont = argparser_ont.add_argument_group( "ONT specific arguments" )
+        group_ont.add_argument( "-m", "--min-overlap", dest = "minoverlap", type = int,
+                                help = "For IRI event-count QC columns, minimum aligned bases inside a constitutive intronic region required to count one read as retained. This does not affect coverage-based IRI. DEFAULT: 20.",
+                                default = 20 )
+        group_ont.add_argument( "--splice-tolerance", dest = "splicetolerance", type = int,
+                                help = "For IRI event-count QC columns, maximum distance in bp between a CIGAR N skipped interval and a constitutive intron boundary to count one read as spliced. This does not affect coverage-based IRI. DEFAULT: 10.",
+                                default = 10 )
+        group_ont.add_argument( "--min-mapq", dest = "minmapq", type = int,
+                                help = "Minimum mapping quality for an alignment to be counted. DEFAULT: 0.",
+                                default = 0 )
+        group_ont.add_argument( "--include-secondary", dest = "include_secondary", action = "store_true",
+                                help = "Include secondary alignments. DEFAULT: secondary alignments are skipped." )
+        group_ont.add_argument( "--include-supplementary", dest = "include_supplementary", action = "store_true",
+                                help = "Include supplementary alignments. DEFAULT: supplementary alignments are skipped." )
+        group_ont.add_argument( "--require-unique", dest = "require_unique", action = "store_true",
+                                help = "Require NH=1 when the NH tag exists. DEFAULT: do not require NH=1." )
+
+        return
 
 
 def add_diff_parser( subparsers ):
         """
         Add main function 'diff' argument parsers.
         """
-        argparser_diff = subparsers.add_parser("diff", help="Detection of intron retention or read-through change between two samples with replicates.")
+        argparser_diff = subparsers.add_parser("diff", help="Compare intron retention or read-through between two sample groups.", description="IRTools " + IRTools_VERSION + " -- compare NGS or ONT quantification results between two sample groups. IRI and RT support both formats; IRC supports NGS results.")
 
         # group for general arguments
         group_general = argparser_diff.add_argument_group( "general arguments" )
@@ -173,10 +227,13 @@ def add_diff_parser( subparsers ):
                                   default = "IRI")   
         group_general.add_argument("--indir", dest = "indir", type = str, default = '',
                                    help = "The directory containing the IR quantification result files to be analyzed. Default: the current working directory")
+        group_general.add_argument("--input-format", dest = "inputformat", type = str, choices = ("auto", "NGS", "ONT"),
+                                   help = "Quantification file format. \"auto\" detects .quant.* (NGS) or .ont.* files from their names. Use NGS or ONT when both formats exist for the same sample. DEFAULT: \"auto\".",
+                                   default = "auto")
         group_general.add_argument( "-s1", "--s1-files", dest = "s1files", type = str, required = True,
-                                    help = "A comma-separated list of sample or replicate names for group 1. Referenced result files must follow \".quant.IRI.{introns,genes}.txt\", \".quant.IRC.{introns,genes,junctions}.txt\", or \".quant.RT.genes.txt\" depending on -q." ) 
+                                    help = "A comma-separated list of sample or replicate names for group 1. IRI and RT accept .quant.* NGS or .ont.* ONT result files; IRC accepts .quant.* files." ) 
         group_general.add_argument( "-s2", "--s2-files", dest = "s2files", type = str, required = True,
-                                    help = "A comma-separated list of sample or replicate names for group 2. Referenced result files must follow \".quant.IRI.{introns,genes}.txt\", \".quant.IRC.{introns,genes,junctions}.txt\", or \".quant.RT.genes.txt\" depending on -q." )
+                                    help = "A comma-separated list of sample or replicate names for group 2. IRI and RT accept .quant.* NGS or .ont.* ONT result files; IRC accepts .quant.* files." )
         group_general.add_argument( "-t", "--analysis-type", dest = "analysistype", type = str, choices = ("P", "U"),
                                   help = "Type of analysis performed. \"P\" is for paired replicates analysis and \"U\" is for unpaired replicates analysis. DEFAULT: \"U\".",
                                   default = "U" ) # Requires same sample size in each sample         

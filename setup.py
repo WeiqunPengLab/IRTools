@@ -9,8 +9,8 @@ README = ROOT / "README.md"
 
 setup(
     name="IRTools",
-    version="2.0",
-    description="A computational toolset for detection and analysis of intron retention from RNA-Seq libraries.",
+    version="2.1",
+    description="A computational toolset for analysis of intron retention and read-through from short-read RNA-seq and ONT direct RNA-seq libraries.",
     long_description=README.read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     author="Zhouhao Zeng, Andy Cao",

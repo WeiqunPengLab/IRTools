@@ -1,2 +1,5 @@
-include README.md MANIFEST LICENSE setup.py bin/IRTools
+include README.md RELEASE_NOTES.md MANIFEST.in LICENSE setup.py pyproject.toml bin/IRTools
 recursive-include IRTools *
+recursive-include tests *.py
+global-exclude *.py[cod] *.pyc.*
+prune IRTools/data/mappability_cache

@@ -407,10 +407,13 @@ class RT_quant(object):
                         ],
                 )
 
-                outfile = self.params['name'] + ".quant.RT.genes.txt"
+                outfile = self.RT_gene_output_filename()
                 outfile_fullpath = os.path.join(self.params['outdir'], outfile)
                 logging.info("Writing gene level result to file: {}".format(outfile_fullpath))
                 self.RT_gene_level_df.to_csv(outfile_fullpath, index=None, sep='\t', na_rep="NA")
+
+        def RT_gene_output_filename(self):
+                return self.params['name'] + ".quant.RT.genes.txt"
 
         def output_RT_genome_wide(self):
                 total_rt_length = sum(self.rt_length.values())
